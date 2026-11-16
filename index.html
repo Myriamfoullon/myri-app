@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="es">
+<head><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./config.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#315b67">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<title>Registro diario Myri</title>
+<style>
+:root{--ink:#24383d;--muted:#65777b;--teal:#315b67;--pale:#edf4f3;--line:#dce6e4;--white:#fff;--rose:#f7eeee;--gold:#f7f1e5}
+*{box-sizing:border-box}body{margin:0;background:#f4f7f6;color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:var(--teal);color:white;padding:22px 18px 18px}header h1{font-size:23px;margin:0 0 4px}header p{margin:0;color:#e0eceb;font-size:14px}
+main{max-width:850px;margin:auto;padding:14px 12px 90px}.tabs{display:flex;gap:7px;overflow:auto;padding:10px 0 14px;position:sticky;top:0;background:#f4f7f6;z-index:3}
+.tabs button{white-space:nowrap;border:1px solid var(--line);background:white;color:var(--teal);border-radius:30px;padding:9px 13px;font-weight:650}
+.tabs button.active{background:var(--teal);color:white}
+section.panel{display:none}section.panel.active{display:block}
+.card{background:white;border:1px solid var(--line);border-radius:16px;padding:16px;margin:0 0 13px;box-shadow:0 2px 8px #193b3908}
+h2{font-size:18px;margin:0 0 13px}h3{font-size:15px;margin:15px 0 8px;color:var(--teal)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}.field.full{grid-column:1/-1}
+label{font-size:13px;font-weight:650;color:#53666a}
+input,select,textarea{font:inherit;color:var(--ink);border:1px solid #cbd9d6;border-radius:10px;padding:10px;background:white;width:100%;min-width:0}
+input[type=range]{padding:0;accent-color:var(--teal)}textarea{min-height:76px;resize:vertical}
+small,.hint{color:var(--muted);font-size:12px}
+.inline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.inline label{font-weight:500}
+.btn{border:0;border-radius:11px;padding:11px 14px;background:var(--teal);color:white;font-weight:700;font-size:14px;cursor:pointer}
+.btn.secondary{background:var(--pale);color:var(--teal);border:1px solid var(--line)}
+.btn.danger{background:#f8eaea;color:#8a3333}.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.entry{border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0;background:#fbfdfc}
+.entrytop{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.entrytop strong{font-size:14px;color:var(--teal)}
+.entrygrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rangevalue{font-weight:700;color:var(--teal);min-width:38px;text-align:right}
+.stickySave{position:fixed;bottom:0;left:0;right:0;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:#ffffffed;border-top:1px solid var(--line);display:flex;justify-content:center;z-index:5}
+.stickySave button{width:min(820px,100%)}
+#autosaveStatus{display:block;margin-top:2px;color:#267052;font-weight:650}.notice{background:var(--gold);border-radius:10px;padding:11px;font-size:13px;color:#665637}
+.dayitem{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:11px 0;gap:10px}
+.dayitem:last-child{border:0}
+@media(min-width:650px){main{padding:20px 20px 100px}.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.field.full{grid-column:1/-1}}
+@media print{header,.tabs,.stickySave,.noprint{display:none!important}body{background:white}.panel{display:block!important}.card{break-inside:avoid;box-shadow:none}main{max-width:none;padding:0}}
+
+/* Tablero semanal y reporte imprimible */
+.week-controls{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:14px}
+.week-controls .field{max-width:220px}
+.metric-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.metric{background:#f5f8f7;border:1px solid var(--line);border-radius:14px;padding:13px;min-width:0}
+.metric .metric-label{font-size:12px;color:var(--muted);font-weight:650}
+.metric .metric-value{font-size:25px;line-height:1.2;font-weight:800;color:var(--teal);margin:5px 0}
+.metric .metric-note{font-size:11px;color:var(--muted)}
+.chart-wrap{border:1px solid var(--line);border-radius:14px;padding:12px;overflow:hidden}
+.chart-title{font-weight:750;color:var(--teal);margin-bottom:8px}
+.chart-svg{display:block;width:100%;height:auto;max-height:260px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%}
+.week-day{border:1px solid var(--line);border-radius:12px;padding:11px;margin:8px 0}
+.week-day-head{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.week-day h3{margin:0}
+.progress{height:9px;background:#e8efed;border-radius:9px;overflow:hidden;margin-top:6px}
+.progress>span{display:block;height:100%;background:#54818a;border-radius:9px}
+.report-actions{display:flex;gap:8px;flex-wrap:wrap}
+#weeklyReport{display:none}
+.report-head{border-bottom:3px solid var(--teal);padding-bottom:12px;margin-bottom:16px}
+.report-head h1{font-size:24px;margin:0;color:var(--teal)}
+.report-head p{margin:5px 0;color:var(--muted);font-size:12px}
+.report-section{margin:15px 0;break-inside:avoid}
+.report-section h2{font-size:16px;color:var(--teal);border-bottom:1px solid var(--line);padding-bottom:5px}
+.report-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.report-grid .metric-value{font-size:20px}
+.report-table{width:100%;border-collapse:collapse;font-size:11px}
+.report-table th,.report-table td{border:1px solid #dce6e4;padding:6px;text-align:left;vertical-align:top}
+.report-table th{background:#edf4f3;color:#315b67}
+.report-note{font-size:11px;color:#65777b}
+@media(min-width:650px){.metric-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media print{
+ body.print-weekly{background:white}
+ body.print-weekly header,body.print-weekly main,body.print-weekly .stickySave{display:none!important}
+ body.print-weekly #weeklyReport{display:block!important;padding:0;margin:0}
+ body.print-weekly .report-section{break-inside:avoid}
+ body.print-weekly .report-grid{grid-template-columns:repeat(4,1fr)}
+ body.print-weekly .report-head,body.print-weekly .report-section{break-inside:avoid}
+ @page{size:A4;margin:13mm}
+}
+
+</style>
+</head>
+<body>
+<header><h1>Registro diario · Myri</h1><p>Un espacio sencillo para registrar cómo estás y compartirlo con tu equipo de salud.</p></header>
+<main>
+<nav class="tabs noprint">
+<button class="active" data-tab="dia">Mi día</button><button data-tab="vitales">Sueño, ánimo y signos</button><button data-tab="eventos">Eventos</button><button data-tab="evolucion">Evolución</button><button data-tab="historial">Historial y exportación</button>
+</nav>
+
+<section id="dia" class="panel active">
+<div class="card">
+<h2>Fecha del registro</h2>
+<div class="grid">
+<div class="field"><label for="date">Fecha</label><input id="date" type="date"><small id="autosaveStatus" role="status" aria-live="polite">Autoguardado activado · solo en este dispositivo</small><div class="btnrow noprint"><button class="btn secondary" id="newDay" type="button">＋ Nuevo día (hoy)</button></div></div>
+<div class="field"><label for="daynote">Nota breve del día (opcional)</label><input id="daynote" placeholder="Ej. día de trabajo, descanso…"></div>
+</div>
+</div>
+<div class="card">
+<h2>Medicamentos habituales</h2>
+<p class="hint">La lista aparece todos los días. Marca únicamente las dosis que hayas tomado y registra la hora real. Las casillas comienzan desmarcadas; no se registra ninguna toma por defecto.</p>
+<div id="medications"></div>
+<h3>Agregar medicamento extra</h3>
+<div class="grid">
+<div class="field"><label for="extraMedName">Medicamento</label><input id="extraMedName" placeholder="Nombre"></div>
+<div class="field"><label for="extraMedDose">Dosis</label><input id="extraMedDose" placeholder="Ej. 1 tableta / 5 mg"></div>
+<div class="field"><label for="extraMedWhen">Momento</label><select id="extraMedWhen"><option>Mañana</option><option>Tarde</option><option>Noche</option><option>Otro</option></select></div>
+<div class="field"><label for="extraMedTime">Hora</label><input id="extraMedTime" type="time"></div>
+</div>
+<div class="btnrow noprint"><button class="btn secondary" id="addExtraMed">＋ Añadir medicamento extra</button></div>
+<p class="hint">Los medicamentos extra se guardan solo en el día correspondiente. Esta lista reproduce los nombres, dosis y horarios que compartiste; no sustituye la indicación de tu médico.</p>
+</div>
+<div class="card">
+<div class="inline" style="justify-content:space-between"><h2 style="margin:0">Registro por hora</h2><span class="hint">Agrega solo lo que ocurra</span></div>
+<p class="hint">Puedes registrar alimentos, bebidas, medicamentos o síntomas en el momento en que sucedan.</p>
+<div id="entries"></div>
+<div class="btnrow noprint"><button class="btn" id="addEntry">＋ Agregar registro</button><button class="btn secondary" id="addCurrent">＋ Usar hora actual</button></div>
+</div>
+<div class="card">
+<h2>Resumen de líquidos del día (opcional)</h2>
+<div class="grid">
+<div class="field"><label for="fluidTotal">Cantidad aproximada total</label><input id="fluidTotal" placeholder="Ej. 1.5 litros"></div>
+<div class="field"><label for="nightSymptoms">Síntomas al final del día</label><input id="nightSymptoms" placeholder="Ej. náusea 4/10"></div>
+</div>
+</div>
+</section>
+
+<section id="vitales" class="panel">
+<div class="card">
+<h2>Sueño y descanso</h2>
+<div class="grid">
+<div class="field"><label for="bed">Hora de acostarte</label><input id="bed" type="time"></div>
+<div class="field"><label for="sleep">Hora aproximada en que te dormiste</label><input id="sleep" type="time"></div>
+<div class="field"><label for="wake">Hora de despertar</label><input id="wake" type="time"></div>
+<div class="field"><label for="nap">¿Tuviste siesta?</label><select id="nap"><option value="">Seleccionar</option><option>Sí</option><option>No</option></select></div>
+<div class="field full"><label for="naptime">Horario / duración de siesta</label><input id="naptime" placeholder="Ej. 14:00 a 15:30"></div>
+</div>
+</div>
+<div class="card">
+<h2>Signos vitales</h2>
+<p class="hint">Anota la hora y los valores tal como los midas. Puedes agregar mediciones extra si hay síntomas.</p>
+<div id="vitals"></div>
+<div class="btnrow noprint"><button class="btn secondary" id="addVital">＋ Agregar medición</button></div>
+</div>
+<div class="card">
+<h2>Ánimo y ansiedad</h2>
+<p class="hint">Escala de 0 a 10: 0 = nada; 10 = intensidad máxima.</p>
+<div id="moods"></div>
+</div>
+</section>
+
+<section id="eventos" class="panel">
+<div class="card">
+<h2>Evento especial o malestar emocional intenso</h2>
+<p class="hint">Puedes usar este apartado cuando lo necesites; no es obligatorio llenar uno cada día.</p>
+<div class="field"><label for="eventTime">Hora de inicio y duración</label><input id="eventTime" placeholder="Ej. 13:00, duró 45 minutos"></div>
+<div class="field"><label for="trigger">¿Qué estabas haciendo? ¿Hubo algún detonante?</label><textarea id="trigger"></textarea></div>
+<div class="field"><label for="intensity">Intensidad del malestar (0–10)</label><div class="inline"><input id="intensity" type="range" min="0" max="10" value="0"><span class="rangevalue" id="intensityVal">0/10</span></div></div>
+<div class="field"><label for="physical">Síntomas físicos o emocionales asociados</label><textarea id="physical" placeholder="Ej. palpitaciones, náusea, angustia…"></textarea></div>
+<div class="field"><label for="helped">¿Qué te ayudó a sentirte mejor o calmarte?</label><textarea id="helped"></textarea></div>
+<div class="field"><label for="eventNotes">Notas adicionales</label><textarea id="eventNotes"></textarea></div>
+<div class="notice" style="margin-top:12px">Si aparecen pensamientos de hacerte daño o no te sientes segura, este registro no sustituye pedir ayuda inmediata a una persona de confianza o a un servicio de urgencias.</div>
+</div>
+</section>
+
+
+<section id="evolucion" class="panel">
+<div class="card">
+  <div class="inline" style="justify-content:space-between;align-items:flex-start">
+    <div><h2 style="margin-bottom:4px">Tu semana de un vistazo</h2><p class="hint">Indicadores descriptivos de los días guardados. Los días sin datos aparecen como “Sin registro”.</p></div>
+  </div>
+  <div class="week-controls noprint">
+    <div class="field"><label for="weekEnd">Semana que termina el</label><input id="weekEnd" type="date"></div>
+    <button class="btn secondary" id="weekToday" type="button">Ver semana actual</button>
+  </div>
+  <div id="weeklySummary"><p class="hint">Todavía no hay registros para mostrar.</p></div>
+</div>
+<div class="card">
+  <h2>Estado emocional</h2>
+  <p class="hint">Promedios diarios de tristeza y ansiedad, escala de 0 a 10.</p>
+  <div id="moodChart" class="chart-wrap"><p class="hint">Aún no hay datos.</p></div>
+</div>
+<div class="card">
+  <h2>Sueño</h2>
+  <p class="hint">Duración estimada entre la hora en que te dormiste y la hora de despertar. No se calcula cuando faltan datos.</p>
+  <div id="sleepChart" class="chart-wrap"><p class="hint">Aún no hay datos.</p></div>
+</div>
+<div class="card">
+  <h2>Alimentación e hidratación</h2>
+  <div id="foodSummary"><p class="hint">Aún no hay datos.</p></div>
+</div>
+<div class="card">
+  <h2>Medicamentos registrados</h2>
+  <p class="hint">Se muestran las dosis marcadas como tomadas. Una casilla sin marcar no permite saber si se omitió o si no se registró.</p>
+  <div id="medSummary"><p class="hint">Aún no hay datos.</p></div>
+</div>
+<div class="card">
+  <h2>Signos vitales</h2>
+  <p class="hint">Valores tal como fueron registrados; no son interpretaciones ni diagnósticos.</p>
+  <div id="vitalChart"><p class="hint">Aún no hay mediciones.</p></div>
+</div>
+<div class="card">
+  <h2>Eventos y notas relevantes</h2>
+  <div id="eventSummary"><p class="hint">Aún no hay eventos registrados.</p></div>
+</div>
+<div class="card noprint">
+  <h2>Informe semanal</h2>
+  <p class="hint">Genera un informe imprimible con gráficas, indicadores y el detalle diario de la semana seleccionada. En el cuadro de impresión de Chrome puedes elegir “Guardar como PDF”.</p>
+  <div class="report-actions"><button class="btn" id="weeklyPdf" type="button">Generar PDF semanal</button><button class="btn secondary" id="refreshWeek" type="button">Actualizar resumen</button></div>
+</div>
+</section>
+<section id="historial" class="panel">
+<div class="card">
+<h2>Registros guardados</h2>
+<p class="hint">El autoguardado conserva tus cambios en este navegador y dispositivo. Para consultar desde otro equipo, exporta un respaldo y compártelo de forma segura. La sincronización privada con Ricardo requiere una etapa adicional.</p>
+<div id="history"></div>
+<div class="btnrow noprint">
+<button class="btn" id="exportJson">Descargar respaldo</button>
+<button class="btn secondary" id="exportCsv">Exportar tabla CSV</button>
+<button class="btn secondary" id="print">Imprimir / Guardar PDF</button>
+</div>
+<div class="field noprint" style="margin-top:14px"><label for="importFile">Restaurar desde un respaldo JSON</label><input id="importFile" type="file" accept=".json,application/json"></div>
+</div>
+</section>
+</main>
+<div id="weeklyReport" aria-hidden="true"></div>
+<div class="stickySave noprint"><button class="btn" id="save">Guardar ahora</button></div>
+<div id="myriCloudPanel" style="max-width:850px;margin:20px auto;padding:20px;background:white;border:1px solid #dce6e4;border-radius:14px;">
+  <h2 style="color:#315b67;margin-top:0;">Mi cuenta Myri</h2>
+  <label for="myriEmail">Correo electrónico</label>
+  <input id="myriEmail" type="email" autocomplete="email" placeholder="Tu correo" style="display:block;width:100%;padding:12px;margin:6px 0 14px;border:1px solid #dce6e4;border-radius:8px;">
+  <label for="myriPassword">Contraseña</label>
+  <input id="myriPassword" type="password" autocomplete="current-password" placeholder="Tu contraseña" style="display:block;width:100%;padding:12px;margin:6px 0 14px;border:1px solid #dce6e4;border-radius:8px;">
+  <button id="myriLoginBtn" type="button">Iniciar sesión</button>
+  <button id="myriLogoutBtn" type="button">Cerrar sesión</button>
+  <button id="myriDownloadBtn" type="button">Actualizar desde mi nube</button>
+<button id="myriUploadBtn" type="button">Subir mis respaldos locales</button>
+  <p id="myriAuthStatus" role="status">Sin conexión a la nube.</p>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const supabaseClient = window.supabase.createClient(
+  window.MYRI_CONFIG.supabaseUrl,
+  window.MYRI_CONFIG.supabaseAnonKey
+);
+async function myriLogin(){
+  const email=$('myriEmail').value.trim();
+  const password=$('myriPassword').value;
+  const status=$('myriAuthStatus');
+
+  status.textContent='Conectando...';
+
+  const {data,error}=await supabaseClient.auth.signInWithPassword({
+    email,
+    password
+  });
+
+  status.textContent=error
+    ? 'Error: '+error.message
+    : 'Sesión iniciada correctamente.';
+}
+
+async function myriLogout(){
+  const {error}=await supabaseClient.auth.signOut();
+  $('myriAuthStatus').textContent=error
+    ? 'Error: '+error.message
+    : 'Sesión cerrada.';
+}
+
+$('myriLoginBtn').addEventListener('click',myriLogin);
+$('myriLogoutBtn').addEventListener('click',myriLogout);
+$('myriUploadBtn').addEventListener('click',myriUpload);
+$('myriDownloadBtn').addEventListener('click',myriDownload);
+async function myriUpload(){
+  const {data:{user},error:authError}=await supabaseClient.auth.getUser();
+
+  if(authError || !user){
+    $('myriAuthStatus').textContent='Primero inicia sesión.';
+    return;
+  }
+
+  const records=all();
+  const dates=Object.keys(records);
+
+  if(!dates.length){
+    $('myriAuthStatus').textContent='No hay registros locales para subir.';
+    return;
+  }
+
+  const rows=dates.map(date=>({
+    user_id:user.id,
+    record_date:date,
+    data:records[date],
+    updated_at:new Date().toISOString()
+  }));
+
+  const {error}=await supabaseClient
+    .from('myri_records')
+    .upsert(rows,{onConflict:'user_id,record_date'});
+
+  $('myriAuthStatus').textContent=error
+    ? 'Error al subir: '+error.message
+    : 'Respaldo subido correctamente: '+rows.length+' registros.';
+}
+async function myriDownload(){
+  const {data:{user},error:authError}=await supabaseClient.auth.getUser();
+
+  if(authError || !user){
+    $('myriAuthStatus').textContent='Primero inicia sesión.';
+    return;
+  }
+
+  const {data,error}=await supabaseClient
+    .from('myri_records')
+    .select('record_date,data')
+    .eq('user_id',user.id);
+
+  if(error){
+    $('myriAuthStatus').textContent='Error al descargar: '+error.message;
+    return;
+  }
+
+  const local=all();
+let imported=0;
+let alreadySaved=0;
+
+data.forEach(row=>{
+  if(!local[row.record_date]){
+    local[row.record_date]=row.data;
+    imported++;
+  }else{
+    alreadySaved++;
+  }
+});
+
+localStorage.setItem('myriRecords',JSON.stringify(local));
+
+  $('myriAuthStatus').textContent=
+    'Actualización completada: '+imported+' registros nuevos. '+alreadySaved+' ya existían y se conservaron.';
+
+  if(activeDate && local[activeDate]){
+    loadDate(activeDate);
+  }
+
+  renderHistory();
+  if(document.querySelector('[data-tab="evolucion"]')?.classList.contains('active'))renderEvolution();
+}
+const fields=['date','daynote','fluidTotal','nightSymptoms','bed','sleep','wake','nap','naptime','eventTime','trigger','intensity','physical','helped','eventNotes'];
+let entries=[],vitals=[],medications=[],moods=[{when:'Mañana',time:'',sad:0,anxiety:0},{when:'Noche',time:'',sad:0,anxiety:0}];
+const usualMedications=[
+ {name:'Levotiroxina',dose:'75 mcg',when:'Mañana'},
+ {name:'Rexulti',dose:'1.5 mg',when:'Mañana'},
+ {name:'Brintellix',dose:'10 mg',when:'Mañana'},
+ {name:'Vitamina D',dose:'5000 U',when:'Mañana'},
+ {name:'Telmisartán',dose:'40 mg',when:'Mañana'},
+ {name:'Amlodipino',dose:'10 mg',when:'Mañana'},
+ {name:'Propranolol',dose:'10 mg',when:'Mañana'},
+ {name:'Brintellix',dose:'10 mg',when:'Tarde'},
+ {name:'Propranolol',dose:'10 mg',when:'Tarde'},
+ {name:'Propranolol',dose:'10 mg',when:'Noche'}
+];
+function defaultMedications(){return usualMedications.map((m,i)=>({...m,id:'usual-'+i,taken:false,time:'',extra:false}));}
+function renderMedications(){
+ const order=['Mañana','Tarde','Noche','Otro'];
+ $('medications').innerHTML=order.map(slot=>{const list=medications.map((m,i)=>({...m,i})).filter(m=>m.when===slot);if(!list.length)return '';return `<h3>${slot}</h3>`+list.map(m=>`<div class="entry"><div class="inline" style="justify-content:space-between"><strong>${esc(m.name)} · ${esc(m.dose)}</strong>${m.extra?`<button class="btn danger noprint" onclick="removeMedication(${m.i})">Quitar</button>`:''}</div><div class="inline" style="margin-top:9px"><label class="inline" style="gap:7px"><input type="checkbox" style="width:auto" ${m.taken?'checked':''} onchange="medications[${m.i}].taken=this.checked;scheduleAutosave()"> Tomado</label><div class="field" style="flex:1;min-width:130px"><label>Hora real</label><input type="time" value="${esc(m.time||'')}" onchange="medications[${m.i}].time=this.value;scheduleAutosave()"></div></div></div>`).join('')}).join('');
+}
+window.removeMedication=i=>{medications.splice(i,1);renderMedications();scheduleAutosave()};
+$('addExtraMed').onclick=()=>{const name=$('extraMedName').value.trim(),dose=$('extraMedDose').value.trim();if(!name){alert('Escribe el nombre del medicamento.');return}medications.push({id:'extra-'+Date.now(),name,dose:dose||'Dosis no especificada',when:$('extraMedWhen').value,time:$('extraMedTime').value,taken:false,extra:true});$('extraMedName').value='';$('extraMedDose').value='';$('extraMedTime').value='';renderMedications();scheduleAutosave()};
+const today=()=>{let d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)};
+let activeDate=today();
+$('date').value=activeDate;
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function renderEntries(){ $('entries').innerHTML=entries.map((e,i)=>`<div class="entry"><div class="entrytop"><strong>Registro ${i+1}</strong><button class="btn danger noprint" onclick="removeEntry(${i})">Quitar</button></div><div class="entrygrid"><div class="field"><label>Hora</label><input type="time" value="${esc(e.time)}" onchange="entries[${i}].time=this.value"></div><div class="field"><label>Tipo</label><select onchange="entries[${i}].kind=this.value"><option ${e.kind==='Alimento'?'selected':''}>Alimento</option><option ${e.kind==='Líquido'?'selected':''}>Líquido</option><option ${e.kind==='Medicamento'?'selected':''}>Medicamento</option><option ${e.kind==='Síntoma'?'selected':''}>Síntoma</option><option ${e.kind==='Otro'?'selected':''}>Otro</option></select></div><div class="field" style="grid-column:1/-1"><label>Descripción, cantidad o dosis</label><textarea onchange="entries[${i}].detail=this.value">${esc(e.detail)}</textarea></div></div></div>`).join('');}
+window.removeEntry=i=>{entries.splice(i,1);renderEntries();scheduleAutosave()};
+function addEntry(time=''){entries.push({time,kind:'Alimento',detail:''});renderEntries();}
+$('addEntry').onclick=()=>{addEntry();scheduleAutosave()};$('addCurrent').onclick=()=>{addEntry(new Date().toTimeString().slice(0,5));scheduleAutosave()};
+function renderVitals(){ $('vitals').innerHTML=vitals.map((v,i)=>`<div class="entry"><div class="entrytop"><strong>Medición ${i+1}</strong><button class="btn danger noprint" onclick="vitals.splice(${i},1);renderVitals();scheduleAutosave()">Quitar</button></div><div class="entrygrid"><div class="field"><label>Momento</label><select onchange="vitals[${i}].when=this.value"><option ${v.when==='Mañana'?'selected':''}>Mañana</option><option ${v.when==='Noche'?'selected':''}>Noche</option><option ${v.when==='Extra por síntoma'?'selected':''}>Extra por síntoma</option></select></div><div class="field"><label>Hora</label><input type="time" value="${esc(v.time)}" onchange="vitals[${i}].time=this.value"></div><div class="field"><label>Presión arterial</label><input placeholder="Ej. 118/78" value="${esc(v.bp)}" onchange="vitals[${i}].bp=this.value"></div><div class="field"><label>Frecuencia cardiaca (lpm)</label><input type="number" min="0" value="${esc(v.hr)}" onchange="vitals[${i}].hr=this.value"></div><div class="field" style="grid-column:1/-1"><label>Motivo / síntomas (si aplica)</label><input value="${esc(v.note)}" onchange="vitals[${i}].note=this.value"></div></div></div>`).join('');}
+$('addVital').onclick=()=>{vitals.push({when:'Extra por síntoma',time:'',bp:'',hr:'',note:''});renderVitals();scheduleAutosave()};
+function renderMoods(){$('moods').innerHTML=moods.map((m,i)=>`<div class="entry"><strong>${m.when}</strong><div class="grid" style="margin-top:8px"><div class="field"><label>Hora</label><input type="time" value="${esc(m.time)}" onchange="moods[${i}].time=this.value"></div><div class="field"><label>Tristeza (0–10): ${m.sad}</label><input type="range" min="0" max="10" value="${m.sad}" oninput="moods[${i}].sad=+this.value;this.previousElementSibling.textContent='Tristeza (0–10): '+this.value"></div><div class="field"><label>Ansiedad (0–10): ${m.anxiety}</label><input type="range" min="0" max="10" value="${m.anxiety}" oninput="moods[${i}].anxiety=+this.value;this.previousElementSibling.textContent='Ansiedad (0–10): '+this.value"></div></div></div>`).join('');}
+$('intensity').oninput=()=> $('intensityVal').textContent=$('intensity').value+'/10';
+function collect(){let d={};fields.forEach(k=>d[k]=$(k).value);d.entries=entries;d.vitals=vitals;d.moods=moods;d.medications=medications;return d}
+function clearForm(d){fields.forEach(k=>$(k).value=d?.[k]??(k==='date'?today():k==='intensity'?'0':''));entries=d?.entries??[];vitals=d?.vitals??[];medications=d?.medications??defaultMedications();moods=d?.moods??[{when:'Mañana',time:'',sad:0,anxiety:0},{when:'Noche',time:'',sad:0,anxiety:0}];$('intensityVal').textContent=$('intensity').value+'/10';renderEntries();renderVitals();renderMedications();renderMoods();}
+function all(){try{return JSON.parse(localStorage.getItem('myriRecords')||'{}')}catch{return {}}}
+function persistRecord(showMessage=false){
+ let d=collect();
+ d.date=activeDate;
+ if(!activeDate){setSaveStatus('Selecciona una fecha para guardar.');return false}
+ try{
+  let a=all();a[activeDate]=d;
+  localStorage.setItem('myriRecords',JSON.stringify(a));
+  localStorage.setItem('myriLastEdited',new Date().toISOString());
+  setSaveStatus('Guardado automáticamente · '+new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}));
+  renderHistory();
+  if(document.querySelector('[data-tab="evolucion"]')?.classList.contains('active'))renderEvolution();
+  return true;
+ }catch(err){setSaveStatus('No se pudo guardar. Exporta un respaldo y revisa el espacio del navegador.');return false}
+}
+function setSaveStatus(msg){const el=$('autosaveStatus');if(el)el.textContent=msg}
+let autosaveTimer;
+function scheduleAutosave(){clearTimeout(autosaveTimer);setSaveStatus('Guardando…');autosaveTimer=setTimeout(()=>persistRecord(false),450)}
+function save(){if(persistRecord(false))setSaveStatus('Día guardado correctamente · '+new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}));}
+$('save').onclick=save;
+// Cambiar de fecha guarda primero el día que se estaba editando y luego abre
+// el día elegido; si ya existe, lo recupera en lugar de sobrescribirlo.
+$('date').addEventListener('change',()=>{
+ const next=$('date').value;
+ if(!next){$('date').value=activeDate;return}
+ if(next===activeDate)return;
+ clearTimeout(autosaveTimer);
+ persistRecord(false);
+ activeDate=next;
+ const existing=all()[activeDate];
+ clearForm(existing||{date:activeDate});
+ setSaveStatus(existing?'Registro recuperado · '+activeDate:'Día nuevo · '+activeDate+' · autoguardado activado'); if($('weekEnd'))renderEvolution();
+});
+$('newDay').onclick=()=>{
+ const target=today();
+ if(activeDate===target){
+   setSaveStatus('Ya estás en el registro de hoy. Tus datos están conservados.');
+   return;
+ }
+ clearTimeout(autosaveTimer);
+ persistRecord(false);
+ activeDate=target;
+ const existing=all()[target];
+ clearForm(existing||{date:target});
+ setSaveStatus(existing?'El registro de hoy ya existía y se recuperó.':'Nuevo registro de hoy listo · autoguardado activado');
+ document.querySelector('[data-tab="dia"]').click();
+ if($('weekEnd'))renderEvolution();
+ window.scrollTo(0,0);
+};
+// Escucha cambios en campos normales y también en controles dinámicos de los registros.
+document.addEventListener('input',scheduleAutosave);
+document.addEventListener('change',scheduleAutosave);
+window.addEventListener('pagehide',()=>{clearTimeout(autosaveTimer);persistRecord(false)});
+
+function renderHistory(){let a=all(),keys=Object.keys(a).sort().reverse();$('history').innerHTML=keys.length?keys.map(k=>`<div class="dayitem"><div><strong>${k}</strong><div class="hint">${(a[k].entries||[]).length} registros por hora · ${(a[k].vitals||[]).length} mediciones</div></div><div class="inline"><button class="btn secondary" onclick="loadDay('${k}')">Abrir</button><button class="btn danger" onclick="deleteDay('${k}')">Borrar</button></div></div>`).join(''):'<p class="hint">Todavía no hay días guardados.</p>'}
+window.loadDay=k=>{activeDate=k;clearForm(all()[k]);document.querySelector('[data-tab="dia"]').click();window.scrollTo(0,0);setSaveStatus('Registro recuperado · '+k)};
+window.deleteDay=k=>{if(confirm('¿Borrar el registro del '+k+'?')){let a=all();delete a[k];localStorage.setItem('myriRecords',JSON.stringify(a));renderHistory()}};
+$('exportJson').onclick=()=>download('registro_myri_respaldo.json',JSON.stringify(all(),null,2),'application/json');
+function download(name,data,type){let blob=new Blob([data],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
+$('exportCsv').onclick=()=>{let rows=[['Fecha','Hora','Tipo','Detalle','PA','FC','Momento','Tristeza','Ansiedad','Sueño acostarse','Sueño inicio','Despertar','Notas']];Object.values(all()).forEach(d=>{let base=[d.date];if(d.entries?.length)d.entries.forEach(e=>rows.push([...base,e.time,e.kind,e.detail,'','','','','',d.bed,d.sleep,d.wake,d.daynote]));else rows.push([...base,'','','','','','','','',d.bed,d.sleep,d.wake,d.daynote]);(d.medications||[]).forEach(m=>rows.push([d.date,m.time||'',m.extra?'Medicamento extra':'Medicamento habitual',`${m.name} · ${m.dose} · ${m.taken?'Tomado':'Sin marcar'}`,'','',m.when,'','','','','','']));});let csv=rows.map(r=>r.map(x=>'"'+String(x??'').replace(/"/g,'""')+'"').join(',')).join('\n');download('registro_myri.csv','\ufeff'+csv,'text/csv;charset=utf-8')};
+$('print').onclick=()=>window.print();
+$('importFile').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let obj=JSON.parse(await f.text());if(!obj||typeof obj!=='object')throw 0;localStorage.setItem('myriRecords',JSON.stringify({...all(),...obj}));renderHistory();renderEvolution();alert('Respaldo restaurado.')}catch{alert('No se pudo leer ese respaldo.')}e.target.value=''};
+
+
+function weekDays(){
+ const endKey=$('weekEnd')?.value||today();
+ const end=new Date(endKey+'T12:00:00');
+ const out=[];
+ for(let i=6;i>=0;i--){
+   const d=new Date(end); d.setDate(d.getDate()-i);
+   const key=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+   out.push({date:key,data:all()[key]||null});
+ }
+ return out;
+}
+function avg(vals){const clean=vals.map(Number).filter(Number.isFinite);return clean.length?clean.reduce((a,b)=>a+b,0)/clean.length:null}
+function fmt(v,d=1){return v===null||!Number.isFinite(v)?'—':v.toFixed(d)}
+function escSvg(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function sleepHours(d){
+ if(!d?.sleep||!d?.wake)return null;
+ const [sh,sm]=d.sleep.split(':').map(Number),[wh,wm]=d.wake.split(':').map(Number);
+ let mins=(wh*60+wm)-(sh*60+sm); if(mins<=0)mins+=1440;
+ return mins/60;
+}
+function shortDay(k){const d=new Date(k+'T12:00:00');return d.toLocaleDateString('es-MX',{weekday:'short'}).replace('.','')}
+function metric(label,value,note=''){
+ return `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value">${value}</div><div class="metric-note">${note}</div></div>`;
+}
+function lineChart(days){
+ const vals=days.map(x=>({sad:x.data?.moods?.length?avg(x.data.moods.map(m=>m.sad)):null,anx:x.data?.moods?.length?avg(x.data.moods.map(m=>m.anxiety)):null}));
+ const W=620,H=220,L=38,R=12,T=15,B=35,plotW=W-L-R,plotH=H-T-B;
+ const y=v=>T+(10-v)/10*plotH, x=i=>L+i*plotW/6;
+ let grid='';for(let v=0;v<=10;v+=2){grid+=`<line x1="${L}" y1="${y(v)}" x2="${W-R}" y2="${y(v)}" stroke="#e5ecea"/><text x="${L-9}" y="${y(v)+4}" text-anchor="end" font-size="10" fill="#65777b">${v}</text>`}
+ let labels=days.map((d,i)=>`<text x="${x(i)}" y="${H-10}" text-anchor="middle" font-size="10" fill="#65777b">${escSvg(shortDay(d.date))}</text>`).join('');
+ function series(key,color){let pts=vals.map((v,i)=>v[key]===null?null:`${x(i)},${y(v[key])}`).filter(Boolean);let path='';let chunks=[];let current=[];vals.forEach((v,i)=>{if(v[key]===null){if(current.length)chunks.push(current);current=[]}else current.push(`${x(i)},${y(v[key])}`)});if(current.length)chunks.push(current);path=chunks.map(c=>`<polyline points="${c.join(' ')}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`).join('');let dots=vals.map((v,i)=>v[key]===null?'':`<circle cx="${x(i)}" cy="${y(v[key])}" r="4" fill="${color}"/>`).join('');return path+dots}
+ const svg=`<svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfica semanal de tristeza y ansiedad">${grid}${series('sad','#4c7d89')}${series('anx','#b47b65')}${labels}</svg>`;
+ return vals.some(v=>v.sad!==null||v.anx!==null)?svg+`<div class="legend"><span><i style="background:#4c7d89"></i>Tristeza</span><span><i style="background:#b47b65"></i>Ansiedad</span></div>`:'<p class="hint">Sin puntuaciones de ánimo registradas esta semana.</p>';
+}
+function sleepBars(days){
+ const rows=days.map(d=>{const h=sleepHours(d.data);return `<div style="display:grid;grid-template-columns:48px 1fr 48px;gap:8px;align-items:center;margin:10px 0"><span class="hint">${escSvg(shortDay(d.date))}</span><div class="progress"><span style="width:${h===null?0:Math.min(100,h/12*100)}%"></span></div><strong style="font-size:12px;text-align:right">${h===null?'—':fmt(h)+' h'}</strong></div>`}).join('');
+ return days.some(d=>sleepHours(d.data)!==null)?rows:'<p class="hint">Sin datos suficientes de sueño esta semana.</p>';
+}
+function simpleVitalPlot(rows,key,label,unit,color){
+ const vals=rows.map((v,i)=>({v:Number(v[key]),i,date:v.date,time:v.time})).filter(x=>Number.isFinite(x.v)&&x.v>0);
+ if(!vals.length)return `<p class="hint">Sin datos de ${label.toLowerCase()}.</p>`;
+ const min=Math.min(...vals.map(x=>x.v)),max=Math.max(...vals.map(x=>x.v));
+ const lo=Math.max(0,min-(max===min?5:(max-min)*.18)),hi=max===min?max+5:max+(max-min)*.18;
+ const W=620,H=150,L=38,R=12,T=14,B=30,px=i=>L+i*(W-L-R)/Math.max(1,vals.length-1),py=v=>T+(hi-v)/(hi-lo)*(H-T-B);
+ const grid=[0,1,2].map(i=>{const v=lo+(hi-lo)*i/2,y=py(v);return `<line x1="${L}" y1="${y}" x2="${W-R}" y2="${y}" stroke="#e5ecea"/><text x="${L-8}" y="${y+4}" text-anchor="end" font-size="10" fill="#65777b">${Math.round(v)}</text>`}).join('');
+ const points=vals.map((x,i)=>`${px(i)},${py(x.v)}`).join(' ');
+ const dots=vals.map((x,i)=>`<circle cx="${px(i)}" cy="${py(x.v)}" r="4" fill="${color}"/><text x="${px(i)}" y="${py(x.v)-9}" text-anchor="middle" font-size="10" fill="#24383d">${x.v}</text>`).join('');
+ return `<div class="chart-wrap" style="margin:8px 0"><div class="chart-title">${label} (${unit})</div><svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución de ${label}">${grid}<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round"/>${dots}</svg><p class="hint">${vals.length} mediciones · ${vals[0].date}${vals.length>1?' a '+vals[vals.length-1].date:''}</p></div>`;
+}
+function vitalPlots(vitals){
+ const bp=vitals.map(v=>{const m=String(v.bp||'').match(/(\d{2,3})\s*[/.-]\s*(\d{2,3})/);return m?{...v,sys:Number(m[1]),dia:Number(m[2])}:null}).filter(Boolean);
+ let out='';
+ if(bp.length){out+=simpleVitalPlot(bp,'sys','Presión sistólica','mmHg','#4c7d89');out+=simpleVitalPlot(bp,'dia','Presión diastólica','mmHg','#b47b65')}
+ out+=simpleVitalPlot(vitals,'hr','Frecuencia cardiaca','lpm','#66875f');
+ return out;
+}
+function renderEvolution(){
+ const days=weekDays(),saved=days.filter(x=>x.data),entries=saved.reduce((n,x)=>n+(x.data.entries||[]).length,0);
+ const mood=saved.flatMap(x=>(x.data.moods||[])),sad=avg(mood.map(m=>m.sad)),anx=avg(mood.map(m=>m.anxiety));
+ const sleeps=days.map(x=>sleepHours(x.data)).filter(x=>x!==null),sleepAvg=avg(sleeps);
+ const meds=saved.flatMap(x=>x.data.medications||[]),taken=meds.filter(m=>m.taken).length;
+ const vitals=saved.flatMap(x=>(x.data.vitals||[]).map(v=>({...v,date:x.date})));
+ const foods=saved.reduce((n,x)=>n+(x.data.entries||[]).filter(e=>e.kind==='Alimento').length,0);
+ const fluids=saved.reduce((n,x)=>n+(x.data.entries||[]).filter(e=>e.kind==='Líquido').length,0);
+ const period=`${days[0].date} a ${days[6].date}`;
+ $('weeklySummary').innerHTML=`<p class="hint">Periodo: <strong>${period}</strong></p><div class="metric-grid">
+ ${metric('Días con registro',`${saved.length}/7`,'Los días vacíos no se cuentan como cero')}
+ ${metric('Registros por hora',entries,'Alimentos, líquidos, síntomas y otros')}
+ ${metric('Tristeza promedio',sad===null?'—':fmt(sad)+'/10',mood.length+' puntuaciones disponibles')}
+ ${metric('Ansiedad promedio',anx===null?'—':fmt(anx)+'/10',mood.length+' puntuaciones disponibles')}
+ ${metric('Sueño promedio',sleepAvg===null?'—':fmt(sleepAvg)+' h',sleeps.length+' noches con datos')}
+ ${metric('Medicamentos marcados',meds.length?`${taken}/${meds.length}`:'—','Dosis marcadas como tomadas')}
+ ${metric('Alimentos registrados',foods,'Entradas clasificadas como alimento')}
+ ${metric('Líquidos registrados',fluids,'Entradas clasificadas como líquido')}
+ </div>`;
+ $('moodChart').innerHTML=lineChart(days);
+ $('sleepChart').innerHTML=sleepBars(days);
+ $('foodSummary').innerHTML=`<div class="metric-grid">${metric('Registros de alimentos',foods,'Durante los 7 días')}${metric('Registros de líquidos',fluids,'Durante los 7 días')}</div><div class="week-day"><strong>Resumen diario</strong>${days.map(x=>`<div class="dayitem"><span>${escSvg(x.date)}</span><span class="hint">${x.data?`${(x.data.entries||[]).filter(e=>e.kind==='Alimento').length} alimentos · ${(x.data.entries||[]).filter(e=>e.kind==='Líquido').length} líquidos`:'Sin registro'}</span></div>`).join('')}</div><p class="hint">Los totales de líquidos escritos en el campo de resumen diario se incluyen en el informe detallado.</p>`;
+ $('medSummary').innerHTML=meds.length?`<p><strong>${taken}</strong> de <strong>${meds.length}</strong> dosis marcadas como tomadas en los días registrados.</p>${days.filter(x=>x.data).map(x=>{const ms=x.data.medications||[];return `<div class="dayitem"><span>${escSvg(x.date)}</span><span class="hint">${ms.filter(m=>m.taken).length}/${ms.length} marcadas como tomadas</span></div>`}).join('')}`:'<p class="hint">No hay medicamentos registrados en esta semana.</p>';
+ $('vitalChart').innerHTML=vitals.length?vitalPlots(vitals)+vitals.map(v=>`<div class="week-day"><div class="week-day-head"><strong>${escSvg(v.date)} · ${escSvg(v.when||'Medición')} ${escSvg(v.time||'')}</strong></div><div class="inline"><span>PA: <b>${escSvg(v.bp||'—')}</b></span><span>FC: <b>${escSvg(v.hr||'—')} ${v.hr?'lpm':''}</b></span></div>${v.note?`<p class="hint">${escSvg(v.note)}</p>`:''}</div>`).join(''):'<p class="hint">Sin mediciones de presión arterial o frecuencia cardiaca esta semana.</p>';
+ const ev=days.filter(x=>x.data).map(x=>({date:x.date,d:x.data})).filter(x=>x.d.trigger||x.d.physical||x.d.helped||x.d.eventNotes||x.d.nightSymptoms);
+ $('eventSummary').innerHTML=ev.length?ev.map(x=>`<div class="week-day"><strong>${escSvg(x.date)}</strong>${x.d.eventTime?`<p><b>Hora/duración:</b> ${escSvg(x.d.eventTime)}</p>`:''}${x.d.intensity?`<p><b>Intensidad:</b> ${escSvg(x.d.intensity)}/10</p>`:''}${x.d.trigger?`<p><b>Contexto:</b> ${escSvg(x.d.trigger)}</p>`:''}${x.d.physical?`<p><b>Síntomas:</b> ${escSvg(x.d.physical)}</p>`:''}${x.d.helped?`<p><b>Qué ayudó:</b> ${escSvg(x.d.helped)}</p>`:''}${x.d.eventNotes?`<p><b>Notas:</b> ${escSvg(x.d.eventNotes)}</p>`:''}${x.d.nightSymptoms?`<p><b>Síntomas al final del día:</b> ${escSvg(x.d.nightSymptoms)}</p>`:''}</div>`).join(''):'<p class="hint">No hay eventos o notas relevantes registrados en esta semana.</p>';
+ buildWeeklyReport(days,{saved,entries,sad,anx,sleepAvg,taken,meds,foods,fluids,vitals});
+}
+function buildWeeklyReport(days,stats){
+ const period=`${days[0].date} a ${days[6].date}`;
+ const dayRows=days.map(x=>{const d=x.data;if(!d)return `<tr><td>${x.date}</td><td colspan="8">Sin registro</td></tr>`;
+ const m=d.moods||[],s=avg(m.map(z=>z.sad)),a=avg(m.map(z=>z.anxiety)),h=sleepHours(d);
+ const med=d.medications||[],tm=med.filter(z=>z.taken).length;
+ const meal=(d.entries||[]).filter(z=>z.kind==='Alimento').length,liq=(d.entries||[]).filter(z=>z.kind==='Líquido').length;
+ const v=(d.vitals||[]).map(z=>`${z.time||''} PA ${z.bp||'—'} / FC ${z.hr||'—'}`).join('<br>')||'—';
+ const note=[d.daynote,d.fluidTotal?`Líquidos: ${d.fluidTotal}`:'',d.nightSymptoms?`Síntomas: ${d.nightSymptoms}`:''].filter(Boolean).map(escSvg).join('<br>')||'—';
+ return `<tr><td>${x.date}</td><td>${h===null?'—':fmt(h)+' h'}</td><td>${s===null?'—':fmt(s)}</td><td>${a===null?'—':fmt(a)}</td><td>${meal}</td><td>${liq}</td><td>${med.length?tm+'/'+med.length:'—'}</td><td>${v}</td><td>${note}</td></tr>`;
+ }).join('');
+ const eventBlocks=days.filter(x=>x.data&&(x.data.trigger||x.data.physical||x.data.helped||x.data.eventNotes)).map(x=>`<p><b>${x.date}:</b> ${[x.data.eventTime,x.data.trigger,x.data.physical,x.data.helped,x.data.eventNotes].filter(Boolean).map(escSvg).join(' · ')}</p>`).join('')||'<p>No se registraron eventos especiales en el periodo.</p>';
+ $('weeklyReport').innerHTML=`<div class="report-head"><h1>Registro Myri · Informe semanal</h1><p>Periodo: ${period} · Generado: ${new Date().toLocaleDateString('es-MX')}</p><p>Resumen descriptivo para revisión clínica. No constituye interpretación ni diagnóstico.</p></div>
+ <div class="report-section"><h2>Indicadores de la semana</h2><div class="report-grid">${metric('Días registrados',`${stats.saved.length}/7`,'')}${metric('Tristeza promedio',stats.sad===null?'—':fmt(stats.sad)+'/10','')}${metric('Ansiedad promedio',stats.anx===null?'—':fmt(stats.anx)+'/10','')}${metric('Sueño promedio',stats.sleepAvg===null?'—':fmt(stats.sleepAvg)+' h','')}</div></div>
+ <div class="report-section"><h2>Evolución emocional</h2>${lineChart(days)}</div>
+ <div class="report-section"><h2>Sueño</h2>${sleepBars(days)}</div>
+ <div class="report-section"><h2>Detalle diario</h2><table class="report-table"><thead><tr><th>Fecha</th><th>Sueño</th><th>Tristeza</th><th>Ansiedad</th><th>Alimentos</th><th>Líquidos</th><th>Medicamentos*</th><th>Signos vitales</th><th>Notas</th></tr></thead><tbody>${dayRows}</tbody></table><p class="report-note">* Medicamentos: dosis marcadas como tomadas / dosis listadas. Una casilla sin marcar no confirma una omisión. Los campos vacíos se muestran como “—”.</p></div>
+ <div class="report-section"><h2>Medicamentos</h2><p>${stats.meds.length?`${stats.taken} de ${stats.meds.length} dosis marcadas como tomadas en el periodo.`:'No hay datos de medicamentos.'}</p>${days.filter(x=>x.data).map(x=>`<p><b>${x.date}:</b> ${(x.data.medications||[]).map(m=>`${escSvg(m.name)} (${escSvg(m.dose)}) · ${m.taken?'Tomado':'Sin marcar'}${m.time?' · '+escSvg(m.time):''}`).join('; ')||'Sin lista de medicamentos'}</p>`).join('')}</div>
+ <div class="report-section"><h2>Eventos y observaciones</h2>${eventBlocks}</div>
+ <p class="report-note">Documento generado a partir de los datos introducidos en Registro Myri. Verificar la información con la persona que la registró.</p>`;
+}
+function printWeekly(){
+ clearTimeout(autosaveTimer);persistRecord(false);renderEvolution();
+ document.body.classList.add('print-weekly');
+ const cleanup=()=>{document.body.classList.remove('print-weekly');window.removeEventListener('afterprint',cleanup)};
+ window.addEventListener('afterprint',cleanup);
+ window.print();
+ setTimeout(()=>document.body.classList.remove('print-weekly'),1500);
+}
+
+
+if($('weekEnd'))$('weekEnd').value=today();
+$('weekEnd')?.addEventListener('change',renderEvolution);
+$('weekToday')?.addEventListener('click',()=>{$('weekEnd').value=today();renderEvolution()});
+$('refreshWeek')?.addEventListener('click',renderEvolution);
+$('weeklyPdf')?.addEventListener('click',printWeekly);
+
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab));if(b.dataset.tab==='historial')renderHistory();if(b.dataset.tab==='evolucion'){if($('weekEnd')&&!$('weekEnd').value)$('weekEnd').value=today();renderEvolution()}});
+clearForm();
+// Recupera automáticamente el registro de hoy si ya existe en este navegador.
+activeDate=today();
+$('date').value=activeDate;
+const savedToday=all()[activeDate];
+if(savedToday)clearForm(savedToday); else clearForm({date:activeDate});
+renderHistory();
+setSaveStatus(savedToday?'Registro de hoy recuperado · autoguardado activado':'Día de hoy listo · autoguardado activado · solo en este dispositivo');
+</script>
+<script>if('serviceWorker' in navigator && location.protocol.startsWith('http')){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}</script>
+
+</body></html>

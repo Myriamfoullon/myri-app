@@ -1,0 +1,13 @@
+{
+  "name": "Registro Myri",
+  "short_name": "Myri",
+  "description": "Registro personal de salud y seguimiento diario",
+  "lang": "es-MX",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f7f6",
+  "theme_color": "#315b67",
+  "icons": [{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
