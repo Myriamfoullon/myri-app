@@ -1,4 +1,10 @@
-"start_url": "./",
+{
+  "id": "./",
+  "name": "Registro Myri",
+  "short_name": "Myri",
+  "description": "Registro personal de salud y seguimiento diario",
+  "lang": "es-MX",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
