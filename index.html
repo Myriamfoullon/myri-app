@@ -671,11 +671,20 @@ function buildWeeklyReport(days,stats){
   ${fluidBlocks}
  </div>
 
- <div class="report-section">
+<div class="report-section">
   <h2>Medicamentos · Detalle por día</h2>
   <p>${stats.meds.length?`${stats.taken} de ${stats.meds.length} dosis marcadas como tomadas en el periodo.`:'No hay datos de medicamentos.'}</p>
-  ${medBlocks}
- </div>
+  ${days.map(x=>{
+    const meds=x.data?.medications||[];
+    return `<div class="dayitem">
+      <strong>${esc(x.date)}</strong>
+      ${meds.length
+        ? `<ul>${meds.map(m=>`<li><strong>${esc(m.name)}</strong> · ${esc(m.dose)} · ${esc(m.when||'Horario no especificado')}${m.time?' · '+esc(m.time):''} · ${m.taken?'Tomado':'Sin marcar'}</li>`).join('')}</ul>`
+        : '<p class="hint">Sin medicamentos registrados</p>'
+      }
+    </div>`;
+  }).join('')}
+</div>
 
  <div class="report-section">
   <h2>Eventos y observaciones</h2>
