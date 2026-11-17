@@ -77,7 +77,7 @@ small,.hint{color:var(--muted);font-size:12px}
 @media(min-width:650px){.metric-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media print{
  body.print-weekly{background:white}
- body.print-weekly header,body.print-weekly main,body.print-weekly .stickySave{display:none!important}
+ body.print-weekly header,body.print-weekly main,body.print-weekly .stickySave,body.print-weekly #myriCloudPanel{display:none!important}
  body.print-weekly #weeklyReport{display:block!important;padding:0;margin:0}
  body.print-weekly .report-section{break-inside:avoid}
  body.print-weekly .report-grid{grid-template-columns:repeat(4,1fr)}
@@ -85,6 +85,20 @@ small,.hint{color:var(--muted);font-size:12px}
  @page{size:A4;margin:13mm}
 }
 
+
+/* Estilo del informe original: fecha a la izquierda y detalles a la derecha */
+#weeklyReport .report-day{display:grid;grid-template-columns:145px minmax(0,1fr);gap:14px;align-items:start;border-bottom:1px solid #dce6e4;padding:10px 0;break-inside:avoid}
+#weeklyReport .report-day:last-child{border-bottom:0}
+#weeklyReport .report-day-date{font-weight:700;color:#315b67}
+#weeklyReport .report-day-content{min-width:0}
+#weeklyReport .report-day-content p{margin:0 0 5px}
+#weeklyReport .report-list{margin:0;padding-left:19px;list-style:disc}
+#weeklyReport .report-list li{padding:1px 0;line-height:1.5}
+#weeklyReport .report-section{break-inside:auto}
+#weeklyReport .report-section h2{break-after:avoid}
+#weeklyReport .report-day{page-break-inside:avoid}
+@media(max-width:480px){#weeklyReport .report-day{grid-template-columns:95px minmax(0,1fr);gap:8px}}
+@media print{body.print-weekly #myriCloudPanel{display:none!important}#weeklyReport .report-day{grid-template-columns:145px minmax(0,1fr)}}
 </style>
 </head>
 <body>
@@ -470,6 +484,26 @@ function sleepHours(d){
  let mins=(wh*60+wm)-(sh*60+sm); if(mins<=0)mins+=1440;
  return mins/60;
 }
+function napHours(d){
+ if(!d||!d.naptime)return 0;
+ const str=String(d.naptime).replace(/[–—]/g,'-');
+ const ranges=[...str.matchAll(/(\d{1,2}):(\d{2})\s*(?:a|hasta|-)\s*(\d{1,2}):(\d{2})/gi)];
+ if(ranges.length){
+  return ranges.reduce((sum,m)=>{
+   const start=Number(m[1])*60+Number(m[2]),end=Number(m[3])*60+Number(m[4]);
+   const mins=(end-start+1440)%1440;
+   return sum+mins/60;
+  },0);
+ }
+ const hour=str.match(/(\d+(?:[.,]\d+)?)\s*(?:h|horas?)(?!\w)/i);
+ const mins=str.match(/(\d+)\s*(?:min|mins|minutos?)/i);
+ if(hour||mins)return (hour?Number(hour[1].replace(',','.')):0)+(mins?Number(mins[1])/60:0);
+ return 0;
+}
+function totalSleepHours(d){
+ const night=sleepHours(d);
+ return night===null?null:night+napHours(d);
+}
 function shortDay(k){const d=new Date(k+'T12:00:00');return d.toLocaleDateString('es-MX',{weekday:'short'}).replace('.','')}
 function metric(label,value,note=''){
  return `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value">${value}</div><div class="metric-note">${note}</div></div>`;
@@ -485,8 +519,15 @@ function lineChart(days){
  return vals.some(v=>v.sad!==null||v.anx!==null)?svg+`<div class="legend"><span><i style="background:#4c7d89"></i>Tristeza</span><span><i style="background:#b47b65"></i>Ansiedad</span></div>`:'<p class="hint">Sin puntuaciones de ánimo registradas esta semana.</p>';
 }
 function sleepBars(days){
- const rows=days.map(d=>{const h=sleepHours(d.data);return `<div style="display:grid;grid-template-columns:48px 1fr 48px;gap:8px;align-items:center;margin:10px 0"><span class="hint">${escSvg(shortDay(d.date))}</span><div class="progress"><span style="width:${h===null?0:Math.min(100,h/12*100)}%"></span></div><strong style="font-size:12px;text-align:right">${h===null?'—':fmt(h)+' h'}</strong></div>`}).join('');
- return days.some(d=>sleepHours(d.data)!==null)?rows:'<p class="hint">Sin datos suficientes de sueño esta semana.</p>';
+ const rows=days.map(x=>{
+  const night=sleepHours(x.data),nap=napHours(x.data),total=totalSleepHours(x.data);
+  return `<div style="display:grid;grid-template-columns:48px 1fr 55px;gap:8px;align-items:center;margin:11px 0;break-inside:avoid">
+   <span class="hint">${escSvg(shortDay(x.date))}</span>
+   <div><div class="progress"><span style="width:${total===null?0:Math.min(100,total/20*100)}%"></span></div>
+   <div class="report-note">Noche ${night===null?'—':fmt(night)+' h'} · Siestas ${x.data?fmt(nap)+' h':'—'}</div></div>
+   <strong style="font-size:12px;text-align:right">${total===null?'—':fmt(total)+' h'}</strong></div>`;
+ }).join('');
+ return days.some(d=>totalSleepHours(d.data)!==null)?rows:'<p class="hint">Sin datos suficientes de sueño esta semana.</p>';
 }
 function simpleVitalPlot(rows,key,label,unit,color){
  const vals=rows.map((v,i)=>({v:Number(v[key]),i,date:v.date,time:v.time})).filter(x=>Number.isFinite(x.v)&&x.v>0);
@@ -509,7 +550,7 @@ function vitalPlots(vitals){
 function renderEvolution(){
  const days=weekDays(),saved=days.filter(x=>x.data),entries=saved.reduce((n,x)=>n+(x.data.entries||[]).length,0);
  const mood=saved.flatMap(x=>(x.data.moods||[])),sad=avg(mood.map(m=>m.sad)),anx=avg(mood.map(m=>m.anxiety));
- const sleeps=days.map(x=>sleepHours(x.data)).filter(x=>x!==null),sleepAvg=avg(sleeps);
+ const sleeps=days.map(x=>totalSleepHours(x.data)).filter(x=>x!==null),sleepAvg=avg(sleeps);
  const meds=saved.flatMap(x=>x.data.medications||[]),taken=meds.filter(m=>m.taken).length;
  const vitals=saved.flatMap(x=>(x.data.vitals||[]).map(v=>({...v,date:x.date})));
  const foods=saved.reduce((n,x)=>n+(x.data.entries||[]).filter(e=>e.kind==='Alimento').length,0);
@@ -520,7 +561,7 @@ function renderEvolution(){
  ${metric('Registros por hora',entries,'Alimentos, líquidos, síntomas y otros')}
  ${metric('Tristeza promedio',sad===null?'—':fmt(sad)+'/10',mood.length+' puntuaciones disponibles')}
  ${metric('Ansiedad promedio',anx===null?'—':fmt(anx)+'/10',mood.length+' puntuaciones disponibles')}
- ${metric('Sueño promedio',sleepAvg===null?'—':fmt(sleepAvg)+' h',sleeps.length+' noches con datos')}
+ ${metric('Sueño total promedio',sleepAvg===null?'—':fmt(sleepAvg)+' h','Incluye siestas')}
  ${metric('Medicamentos marcados',meds.length?`${taken}/${meds.length}`:'—','Dosis marcadas como tomadas')}
  ${metric('Alimentos registrados',foods,'Entradas clasificadas como alimento')}
  ${metric('Líquidos registrados',fluids,'Entradas clasificadas como líquido')}
@@ -536,163 +577,68 @@ function renderEvolution(){
 }
 function buildWeeklyReport(days,stats){
  const period=`${days[0].date} a ${days[6].date}`;
-
- const safe=(v)=>esc(v??'—');
- const showTime=(v)=>v?` · ${safe(v)}`:'';
-
+ const safe=v=>escSvg(v??'—');
+ const dayBlock=(date,content)=>`<div class="report-day"><div class="report-day-date">${safe(date)}</div><div class="report-day-content">${content}</div></div>`;
  const dayRows=days.map(x=>{
   const d=x.data;
   if(!d)return `<tr><td>${safe(x.date)}</td><td colspan="8">Sin registro</td></tr>`;
-
-  const m=d.moods||[];
-  const s=avg(m.map(z=>z.sad));
-  const a=avg(m.map(z=>z.anxiety));
-  const h=sleepHours(d);
-  const med=d.medications||[];
-  const tm=med.filter(z=>z.taken).length;
-  const meal=(d.entries||[]).filter(z=>z.kind==='Alimento').length;
-  const liq=(d.entries||[]).filter(z=>z.kind==='Líquido').length;
-  const v=(d.vitals||[]).map(z=>`${safe(z.time||z.when)} PA ${safe(z.bp)} / FC ${safe(z.hr)}`).join('<br>')||'—';
-  const note=[d.daynote,d.fluidTotal?`Líquidos: ${d.fluidTotal}`:'',d.nightSymptoms?`Síntomas: ${d.nightSymptoms}`:''].filter(Boolean).map(safe).join('<br>')||'—';
-
-  return `<tr>
-   <td>${safe(x.date)}</td>
-   <td>${h===null?'—':fmt(h)+' h'}</td>
-   <td>${s===null?'—':fmt(s)}</td>
-   <td>${a===null?'—':fmt(a)}</td>
-   <td>${meal}</td>
-   <td>${liq}</td>
-   <td>${med.length?tm+'/'+med.length:'—'}</td>
-   <td>${v}</td>
-   <td>${note}</td>
-  </tr>`;
+  const m=d.moods||[],sad=avg(m.map(z=>z.sad)),anx=avg(m.map(z=>z.anxiety));
+  const night=sleepHours(d),nap=napHours(d),total=totalSleepHours(d);
+  const meds=d.medications||[],taken=meds.filter(z=>z.taken).length;
+  const food=(d.entries||[]).filter(z=>z.kind==='Alimento').length;
+  const fluids=(d.entries||[]).filter(z=>z.kind==='Líquido').length;
+  const vital=(d.vitals||[]).map(z=>`${safe(z.time||z.when)} PA ${safe(z.bp)} / FC ${safe(z.hr)}`).join('<br>')||'—';
+  const notes=[d.daynote,d.fluidTotal?'Líquidos: '+d.fluidTotal:'',d.nightSymptoms?'Síntomas: '+d.nightSymptoms:''].filter(Boolean).map(safe).join('<br>')||'—';
+  return `<tr><td>${safe(x.date)}</td><td>${total===null?'—':fmt(total)+' h<br><small>Noche '+fmt(night)+' h + siestas '+fmt(nap)+' h</small>'}</td><td>${sad===null?'—':fmt(sad)}</td><td>${anx===null?'—':fmt(anx)}</td><td>${food}</td><td>${fluids}</td><td>${meds.length?taken+'/'+meds.length:'—'}</td><td>${vital}</td><td>${notes}</td></tr>`;
  }).join('');
-
- const foodBlocks=days.map(x=>{
+ const foodBlocks=days.filter(x=>x.data).map(x=>{
+  const entries=(x.data.entries||[]).filter(e=>e.kind==='Alimento');
+  return dayBlock(x.date,entries.length?entries.map(e=>`<p>${safe(e.time||'Sin hora')}: ${safe(e.detail||'Sin descripción')}</p>`).join(''):'<p class="report-note">Sin alimentos registrados.</p>');
+ }).join('')||'<p class="report-note">Sin registros de alimentación.</p>';
+ const medsBlocks=days.filter(x=>x.data).map(x=>{
+  const ms=x.data.medications||[];
+  return dayBlock(x.date,ms.length?`<ul class="report-list">${ms.map(m=>`<li>${safe(m.name||'Medicamento')} (${safe(m.dose||'Dosis no indicada')}) · ${m.taken?'Tomado':'Sin marcar'}${m.time?' · '+safe(m.time):''}</li>`).join('')}</ul>`:'<p class="report-note">Sin lista de medicamentos.</p>');
+ }).join('')||'<p class="report-note">Sin registros de medicamentos.</p>';
+ const activityBlocks=days.filter(x=>x.data).map(x=>{
   const d=x.data;
-  const entries=(d?.entries||[]).filter(e=>e.kind==='Alimento');
-  return `<div class="dayitem"><strong>${safe(x.date)}</strong>${
-   entries.length
-   ?entries.map(e=>`<p>${safe(e.time||'Hora no registrada')} · ${safe(e.detail||'Sin descripción')}</p>`).join('')
-   :' <p class="hint">Sin registros de alimentos</p>'
-  }</div>`;
- }).join('');
-
- const fluidBlocks=days.map(x=>{
+  const vals=[d.exercise,d.exerciseType,d.exerciseDuration,d.activity,d.activityNotes,d.physicalActivity].filter(Boolean);
+  return vals.length?`<p><b>${safe(x.date)}:</b> ${vals.map(safe).join(' · ')}</p>`:'';
+ }).filter(Boolean).join('')||'<p>No se registró actividad física en el periodo.</p>';
+ const specialBlocks=days.filter(x=>x.data).map(x=>{
   const d=x.data;
-  const entries=(d?.entries||[]).filter(e=>e.kind==='Líquido');
-  return `<div class="dayitem"><strong>${safe(x.date)}</strong>${
-   entries.length
-   ?entries.map(e=>`<p>${safe(e.time||'Hora no registrada')} · ${safe(e.detail||'Sin descripción')}</p>`).join('')
-   :' <p class="hint">Sin registros de líquidos</p>'
-  }</div>`;
- }).join('');
-
- const medBlocks=days.map(x=>{
-  const d=x.data;
-  const meds=d?.medications||[];
-  return `<div class="dayitem"><strong>${safe(x.date)}</strong>${
-   meds.length
-   ?meds.map(m=>`<p>${safe(m.name)} · ${safe(m.dose)} · ${safe(m.when||'Horario no especificado')}${showTime(m.time)} · ${m.taken?'Tomado':'Sin marcar'}</p>`).join('')
-   :' <p class="hint">Sin lista de medicamentos</p>'
-  }</div>`;
- }).join('');
-
- const eventBlocks=days.map(x=>{
-  const d=x.data;
-  if(!d)return `<p><b>${safe(x.date)}:</b> Sin registro</p>`;
-  const notes=[d.eventTime,d.trigger,d.physical,d.helped,d.eventNotes,d.nightSymptoms].filter(Boolean);
-  return `<p><b>${safe(x.date)}:</b> ${notes.length?notes.map(safe).join(' · '):'Sin eventos u observaciones registrados'}</p>`;
- }).join('');
-
- const vitalData=stats.vitals||[];
- const vitalDetails=days.map(x=>{
-  const vs=x.data?.vitals||[];
-  return `<div class="dayitem"><strong>${safe(x.date)}</strong>${
-   vs.length
-   ?vs.map(v=>`<p>${safe(v.when||'Momento no especificado')}${showTime(v.time)} · PA ${safe(v.bp)} · FC ${safe(v.hr)} lpm${v.note?` · ${safe(v.note)}`:''}</p>`).join('')
-   :' <p class="hint">Sin mediciones registradas</p>'
-  }</div>`;
- }).join('');
-
+  const vals=[d.specialActivity,d.specialEvent,d.specialMoment,d.specialNotes,d.socialActivity].filter(Boolean);
+  return vals.length?`<p><b>${safe(x.date)}:</b> ${vals.map(safe).join(' · ')}</p>`:'';
+ }).filter(Boolean).join('')||'<p>No se registraron actividades o momentos especiales en el periodo.</p>';
+ const eventBlocks=days.filter(x=>x.data).map(x=>{
+  const d=x.data,vals=[d.eventTime,d.trigger,d.physical,d.helped,d.eventNotes].filter(Boolean);
+  return vals.length?`<p><b>${safe(x.date)}:</b> ${vals.map(safe).join(' · ')}</p>`:'';
+ }).filter(Boolean).join('')||'<p>No se registraron eventos especiales en el periodo.</p>';
+ const bpRows=(stats.vitals||[]).filter(v=>/(\d{2,3})\s*[/.-]\s*(\d{2,3})/.test(String(v.bp||'')));
+ const bpCharts=bpRows.length
+   ?simpleVitalPlot(bpRows.map(v=>{const m=String(v.bp).match(/(\d{2,3})\s*[/.-]\s*(\d{2,3})/);return {...v,sys:+m[1],dia:+m[2]}}),'sys','Presión sistólica','mmHg','#4c7d89')
+    +simpleVitalPlot(bpRows.map(v=>{const m=String(v.bp).match(/(\d{2,3})\s*[/.-]\s*(\d{2,3})/);return {...v,sys:+m[1],dia:+m[2]}}),'dia','Presión diastólica','mmHg','#b47b65')
+   :'<p class="report-note">No hay mediciones de presión arterial registradas esta semana.</p>';
+ const napAvg=avg(days.filter(x=>x.data).map(x=>napHours(x.data)));
+ const totalAvg=avg(days.map(x=>totalSleepHours(x.data)).filter(x=>x!==null));
  $('weeklyReport').innerHTML=`
- <div class="report-head">
-  <h1>Registro Myri · Informe semanal</h1>
-  <p>Periodo: ${period} · Generado: ${new Date().toLocaleDateString('es-MX')}</p>
-  <p>Resumen descriptivo para revisión clínica. No constituye interpretación ni diagnóstico.</p>
- </div>
-
- <div class="report-section">
-  <h2>Indicadores de la semana</h2>
-  <div class="report-grid">
-   ${metric('Días registrados',`${stats.saved.length}/7`,'')}
-   ${metric('Tristeza promedio',stats.sad===null?'—':fmt(stats.sad)+'/10','')}
-   ${metric('Ansiedad promedio',stats.anx===null?'—':fmt(stats.anx)+'/10','')}
-   ${metric('Sueño promedio',stats.sleepAvg===null?'—':fmt(stats.sleepAvg)+' h','')}
-  </div>
- </div>
-
- <div class="report-section">
-  <h2>Evolución emocional</h2>
-  ${lineChart(days)}
- </div>
-
- <div class="report-section">
-  <h2>Sueño</h2>
-  ${sleepBars(days)}
- </div>
-
- <div class="report-section">
-  <h2>Presión arterial y frecuencia cardiaca</h2>
-  ${vitalData.length?vitalPlots(vitalData):'<p class="hint">No hay mediciones de signos vitales en este periodo.</p>'}
-  ${vitalDetails}
- </div>
-
- <div class="report-section">
-  <h2>Detalle diario</h2>
-  <table class="report-table">
-   <thead><tr>
-    <th>Fecha</th><th>Sueño</th><th>Tristeza</th><th>Ansiedad</th>
-    <th>Alimentos</th><th>Líquidos</th><th>Medicamentos*</th>
-    <th>Signos vitales</th><th>Notas</th>
-   </tr></thead>
-   <tbody>${dayRows}</tbody>
-  </table>
-  <p class="report-note">* Medicamentos: dosis marcadas como tomadas / dosis listadas. Una casilla sin marcar no confirma una omisión. Los campos vacíos se muestran como “—”.</p>
- </div>
-
- <div class="report-section">
-  <h2>Alimentación · Detalle por día y horario</h2>
-  ${foodBlocks}
- </div>
-
- <div class="report-section">
-  <h2>Líquidos · Detalle por día y horario</h2>
-  ${fluidBlocks}
- </div>
-
-<div class="report-section">
-  <h2>Medicamentos</h2>
-  <p>${stats.meds.length?`<b>${stats.taken} de ${stats.meds.length}</b> dosis marcadas como tomadas en el periodo.`:'No hay datos de medicamentos.'}</p>
-  ${days.filter(x=>x.data).map(x=>{
-    const ms=x.data.medications||[];
-    return `<div class="dayitem">
-      <b>${escSvg(x.date)}</b>
-      ${ms.length
-        ? `<ul class="report-list">${ms.map(m=>`<li><b>${escSvg(m.name||'Medicamento')}</b> (${escSvg(m.dose||'Dosis no indicada')}) · ${m.taken?'Tomado':'Sin marcar'}${m.time?' · '+escSvg(m.time):''}</li>`).join('')}</ul>`
-        : '<p class="report-note">Sin lista de medicamentos.</p>'
-      }
-    </div>`;
-  }).join('')}
-</div>
-
- <div class="report-section">
-  <h2>Eventos y observaciones</h2>
-  ${eventBlocks}
- </div>
-
- <p class="report-note">Documento generado a partir de los datos introducidos en Registro Myri. Verificar la información con la persona que la registró.</p>
- `;
+ <div class="report-head"><h1>Registro Myri · Informe semanal</h1><p>Periodo: ${period} · Generado: ${new Date().toLocaleDateString('es-MX')}</p><p>Resumen descriptivo para revisión clínica. No constituye interpretación ni diagnóstico.</p></div>
+ <div class="report-section"><h2>Indicadores de la semana</h2><div class="report-grid">
+ ${metric('Días registrados',stats.saved.length+'/7','')}
+ ${metric('Siestas promedio',napAvg===null?'—':fmt(napAvg)+' h','Por día registrado')}
+ ${metric('Tristeza promedio',stats.sad===null?'—':fmt(stats.sad)+'/10','')}
+ ${metric('Ansiedad promedio',stats.anx===null?'—':fmt(stats.anx)+'/10','')}
+ ${metric('Sueño total promedio',totalAvg===null?'—':fmt(totalAvg)+' h','Incluye siestas')}
+ </div></div>
+ <div class="report-section"><h2>Evolución emocional</h2>${lineChart(days)}</div>
+ <div class="report-section"><h2>Sueño</h2>${sleepBars(days)}</div>
+ <div class="report-section"><h2>Gráficas de tensión arterial</h2><p class="report-note">Mediciones registradas en orden cronológico. Valores en mmHg.</p>${bpCharts}</div>
+ <div class="report-section"><h2>Detalle diario</h2><table class="report-table"><thead><tr><th>Fecha</th><th>Sueño total (noche + siestas)</th><th>Tristeza</th><th>Ansiedad</th><th>Alimentos</th><th>Líquidos</th><th>Medicamentos*</th><th>Signos vitales</th><th>Notas</th></tr></thead><tbody>${dayRows}</tbody></table><p class="report-note">* Sueño total: duración nocturna más siestas registradas. Medicamentos: dosis marcadas como tomadas / dosis listadas. Una casilla sin marcar no confirma una omisión.</p></div>
+ <div class="report-section"><h2>Alimentación registrada</h2>${foodBlocks}</div>
+ <div class="report-section"><h2>Medicamentos</h2><p>${stats.meds.length?`<b>${stats.taken} de ${stats.meds.length}</b> dosis marcadas como tomadas en el periodo.`:'No hay datos de medicamentos.'}</p>${medsBlocks}</div>
+ <div class="report-section"><h2>Actividad física y movimiento</h2>${activityBlocks}</div>
+ <div class="report-section"><h2>Actividades y momentos especiales</h2>${specialBlocks}</div>
+ <div class="report-section"><h2>Eventos y observaciones</h2>${eventBlocks}</div>
+ <p class="report-note">Documento generado a partir de los datos introducidos en Registro Myri. Verificar la información con la persona que la registró.</p>`;
 }
 function printWeekly(){
  clearTimeout(autosaveTimer);persistRecord(false);renderEvolution();
