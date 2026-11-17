@@ -139,7 +139,7 @@ small,.hint{color:var(--muted);font-size:12px}
 <div class="field"><label for="sleep">Hora aproximada en que te dormiste</label><input id="sleep" type="time"></div>
 <div class="field"><label for="wake">Hora de despertar</label><input id="wake" type="time"></div>
 <div class="field"><label for="nap">¿Tuviste siesta?</label><select id="nap"><option value="">Seleccionar</option><option>Sí</option><option>No</option></select></div>
-<div class="field full"><label for="naptime">Horario / duración de siesta</label><input id="naptime" placeholder="Ej. 14:00 a 15:30"></div>
+<div class="field full"><label for="naptime">Horario / duración de siesta</label><input id="naptime" placeholder="Ej. 14:00 a 15:30 o 1 h 30 min"></div>
 </div>
 </div>
 <div class="card">
@@ -191,7 +191,7 @@ small,.hint{color:var(--muted);font-size:12px}
 </div>
 <div class="card">
   <h2>Sueño</h2>
-  <p class="hint">Duración estimada entre la hora en que te dormiste y la hora de despertar. No se calcula cuando faltan datos.</p>
+  <p class="hint">Sueño total del día: sueño nocturno más siestas con horario o duración reconocible. Si falta un dato, solo se suma lo registrado.</p>
   <div id="sleepChart" class="chart-wrap"><p class="hint">Aún no hay datos.</p></div>
 </div>
 <div class="card">
@@ -474,11 +474,36 @@ function weekDays(){
 function avg(vals){const clean=vals.map(Number).filter(Number.isFinite);return clean.length?clean.reduce((a,b)=>a+b,0)/clean.length:null}
 function fmt(v,d=1){return v===null||!Number.isFinite(v)?'—':v.toFixed(d)}
 function escSvg(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+// Horas totales = sueño nocturno + siesta. No se presupone una siesta sin duración.
+function napHours(d){
+ if(!d || d.nap==='No' || !String(d.naptime||'').trim())return null;
+ const raw=String(d.naptime).trim().toLowerCase().replace(/,/g,'.');
+ const clock=raw.match(/(\d{1,2}):(\d{2})\s*(?:a|hasta|–|—|-)\s*(\d{1,2}):(\d{2})/);
+ if(clock){
+  const [h1,m1,h2,m2]=clock.slice(1).map(Number);
+  if(h1>23||h2>23||m1>59||m2>59)return null;
+  let mins=(h2*60+m2)-(h1*60+m1);
+  if(mins<0)mins+=1440;
+  return mins>0&&mins<=720?mins/60:null;
+ }
+ const hours=raw.match(/(\d+(?:\.\d+)?)\s*(?:horas?|hrs?|h)(?![a-z])/);
+ const minutes=raw.match(/(\d+(?:\.\d+)?)\s*(?:minutos?|mins?|min)(?![a-z])/);
+ if(hours||minutes){const total=(hours?Number(hours[1])*60:0)+(minutes?Number(minutes[1]):0);return total>0&&total<=720?total/60:null;}
+ return null;
+}
 function sleepHours(d){
- if(!d?.sleep||!d?.wake)return null;
- const [sh,sm]=d.sleep.split(':').map(Number),[wh,wm]=d.wake.split(':').map(Number);
- let mins=(wh*60+wm)-(sh*60+sm); if(mins<=0)mins+=1440;
- return mins/60;
+ if(!d)return null;
+ let night=null;
+ if(d.sleep&&d.wake){
+  const [sh,sm]=d.sleep.split(':').map(Number),[wh,wm]=d.wake.split(':').map(Number);
+  if([sh,sm,wh,wm].every(Number.isFinite)){
+   let mins=(wh*60+wm)-(sh*60+sm);
+   if(mins<=0)mins+=1440;
+   night=mins/60;
+  }
+ }
+ const nap=napHours(d);
+ return night===null&&nap===null?null:(night||0)+(nap||0);
 }
 function shortDay(k){const d=new Date(k+'T12:00:00');return d.toLocaleDateString('es-MX',{weekday:'short'}).replace('.','')}
 function metric(label,value,note=''){
@@ -530,7 +555,7 @@ function renderEvolution(){
  ${metric('Registros por hora',entries,'Alimentos, líquidos, síntomas y otros')}
  ${metric('Tristeza promedio',sad===null?'—':fmt(sad)+'/10',mood.length+' puntuaciones disponibles')}
  ${metric('Ansiedad promedio',anx===null?'—':fmt(anx)+'/10',mood.length+' puntuaciones disponibles')}
- ${metric('Sueño promedio',sleepAvg===null?'—':fmt(sleepAvg)+' h',sleeps.length+' noches con datos')}
+ ${metric('Sueño total promedio',sleepAvg===null?'—':fmt(sleepAvg)+' h',sleeps.length+' días con datos (incluye siestas)')}
  ${metric('Medicamentos marcados',meds.length?`${taken}/${meds.length}`:'—','Dosis marcadas como tomadas')}
  ${metric('Alimentos registrados',foods,'Entradas clasificadas como alimento')}
  ${metric('Líquidos registrados',fluids,'Entradas clasificadas como líquido')}
@@ -638,7 +663,7 @@ function buildWeeklyReport(days,stats){
    ${metric('Días registrados',`${stats.saved.length}/7`,'')}
    ${metric('Tristeza promedio',stats.sad===null?'—':fmt(stats.sad)+'/10','')}
    ${metric('Ansiedad promedio',stats.anx===null?'—':fmt(stats.anx)+'/10','')}
-   ${metric('Sueño promedio',stats.sleepAvg===null?'—':fmt(stats.sleepAvg)+' h','')}
+   ${metric('Sueño total promedio',stats.sleepAvg===null?'—':fmt(stats.sleepAvg)+' h','Incluye siestas registradas')}
   </div>
  </div>
 
