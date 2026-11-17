@@ -301,6 +301,7 @@ function myriKeepSafetyCopy(label){
   }catch(e){/* El archivo JSON descargado sigue siendo el respaldo principal. */}
   download('myri_respaldo_antes_de_sincronizar_'+new Date().toISOString().slice(0,10)+'.json',raw,'application/json');
 }
+function myriRecordMeaningful(x){return Boolean(x&&((x.entries||[]).some(e=>String(e.detail||'').trim())||(x.medications||[]).some(m=>m.taken)||(x.vitals||[]).some(v=>String(v.bp||v.hr||v.note||'').trim())||['daynote','nightSymptoms','bed','sleep','wake','eventNotes'].some(k=>String(x[k]||'').trim())))}
 async function myriCloudUser(){
   const {data,error}=await supabaseClient.auth.getUser();
   if(error||!data?.user){myriStatus('Primero inicia sesión en Mi cuenta Myri.');return null}
@@ -322,7 +323,8 @@ async function myriMakeMaster(){
   myriSyncBusy=true;
   try{
     const records=all(),dates=Object.keys(records);
-    if(!dates.length)throw Error('No hay registros locales para publicar.');
+    if(!dates.every(date=>myriRecordMeaningful(records[date])))throw Error('Hay días vacíos. Revisa el respaldo antes de subir a la nube.');
+    if(dates.length<7)throw Error('Se necesitan los siete días del respaldo antes de configurar la Mac. Restaura el JSON completo primero.');
     const rows=dates.map(date=>({user_id:user.id,record_date:date,data:records[date],updated_at:new Date().toISOString()}));
     const {data,error}=await supabaseClient.from('myri_records')
       .upsert(rows,{onConflict:'user_id,record_date'}).select('record_date,data,updated_at');
@@ -346,13 +348,13 @@ async function myriJoinCloud(){
     const different=rows.filter(r=>local[r.record_date]&&myriHash(local[r.record_date])!==myriHash(r.data));
     const newOnly=Object.keys(local).filter(k=>!rows.some(r=>r.record_date===k));
     myriKeepSafetyCopy('Samsung antes de conectar');
-    const message='Se descargó un respaldo JSON de seguridad de este dispositivo. La nube contiene '+rows.length+' días. '+different.length+' fechas tienen datos distintos. '+newOnly.length+' fechas solo existen aquí y se conservarán. ¿Quieres usar la versión de la Mac para las fechas coincidentes?';
+    const message='Se descargó un respaldo JSON de seguridad de este dispositivo. La nube contiene '+rows.length+' días. '+different.length+' fechas tienen datos distintos. '+newOnly.length+' fechas solo existen aquí y se conservarán. Los días con diferencias se conservarán en este dispositivo y se señalarán para revisión. ¿Quieres conectar este dispositivo?';
     if(!confirm(message)){myriStatus('Conexión cancelada. Conservamos los registros locales y el respaldo.');return}
     const merged={...local};
-    rows.forEach(r=>{merged[r.record_date]=r.data});
+    rows.forEach(r=>{if(!local[r.record_date]||myriHash(local[r.record_date])===myriHash(r.data))merged[r.record_date]=r.data});
     localStorage.setItem('myriRecords',JSON.stringify(merged));
     const baseline={};
-    rows.forEach(r=>baseline[r.record_date]={hash:myriHash(r.data),updated_at:r.updated_at});
+    rows.forEach(r=>{if(myriHash(merged[r.record_date])===myriHash(r.data))baseline[r.record_date]={hash:myriHash(r.data),updated_at:r.updated_at}});
     localStorage.setItem(SYNC_BASE_KEY,JSON.stringify(baseline));
     localStorage.setItem(SYNC_ON_KEY,'yes');
     if(merged[activeDate])clearForm(merged[activeDate]);
@@ -384,7 +386,7 @@ async function myriSync(){
       if(lh===rh){if(r)baseline[date]={hash:rh,updated_at:r.updated_at};continue}
       if(lh===bh && rh!==bh){
         if(editing)continue;
-        if(r){local[date]=r.data;baseline[date]={hash:rh,updated_at:r.updated_at};pulled++}
+        if(r){if(!myriRecordMeaningful(r.data)&&myriRecordMeaningful(l)){conflicts.push(date);continue;}local[date]=r.data;baseline[date]={hash:rh,updated_at:r.updated_at};pulled++}
         else conflicts.push(date);
         continue;
       }
@@ -475,11 +477,24 @@ function collect(){let d={};fields.forEach(k=>d[k]=$(k).value);d.entries=entries
 function clearForm(d){fields.forEach(k=>$(k).value=d?.[k]??(k==='date'?today():k==='intensity'?'0':''));specials=d?.specials??[];exercises=d?.exercises??[];entries=d?.entries??[];vitals=d?.vitals??[];medications=d?.medications??defaultMedications();moods=d?.moods??[{when:'Mañana',time:'',sad:0,anxiety:0},{when:'Noche',time:'',sad:0,anxiety:0}];$('intensityVal').textContent=$('intensity').value+'/10';renderEntries();renderVitals();renderMedications();renderMoods();renderSpecials();renderExercises();}
 function all(){try{return JSON.parse(localStorage.getItem('myriRecords')||'{}')}catch{return {}}}
 function persistRecord(showMessage=false){
- let d=collect();
- d.date=activeDate;
  if(!activeDate){setSaveStatus('Selecciona una fecha para guardar.');return false}
  try{
-  let a=all();a[activeDate]=d;
+  const d=collect();d.date=activeDate;
+  const a=all();
+  // Evita sobrescribir un día con información mediante un formulario vacío.
+  const meaningful=x=>Boolean(x&&(
+   (x.entries||[]).some(e=>String(e.detail||'').trim())||
+   (x.medications||[]).some(m=>m.taken)||
+   (x.vitals||[]).some(v=>String(v.bp||v.hr||v.note||'').trim())||
+   (x.specials||[]).some(v=>Object.values(v).some(z=>String(z||'').trim()))||
+   (x.exercises||[]).some(v=>Object.values(v).some(z=>String(z||'').trim()))||
+   ['daynote','fluidTotal','nightSymptoms','bed','sleep','wake','naptime','eventTime','trigger','physical','helped','eventNotes'].some(k=>String(x[k]||'').trim())||
+   (x.moods||[]).some(m=>m.time||Number(m.sad)>0||Number(m.anxiety)>0)
+  ));
+  if(meaningful(a[activeDate])&&!meaningful(d)){
+   setSaveStatus('Guardado detenido para proteger el registro existente.');return false;
+  }
+  a[activeDate]=d;
   localStorage.setItem('myriRecords',JSON.stringify(a));
   localStorage.setItem('myriLastEdited',new Date().toISOString());
   setSaveStatus('Guardado automáticamente · '+new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}));
@@ -500,8 +515,10 @@ $('date').addEventListener('change',()=>{
  if(!next){$('date').value=activeDate;return}
  if(next===activeDate)return;
  clearTimeout(autosaveTimer);
+ $('date').value=activeDate;
  persistRecord(false);
  activeDate=next;
+ $('date').value=next;
  const existing=all()[activeDate];
  clearForm(existing||{date:activeDate});
  setSaveStatus(existing?'Registro recuperado · '+activeDate:'Día nuevo · '+activeDate+' · autoguardado activado'); if($('weekEnd'))renderEvolution();
@@ -524,11 +541,10 @@ $('newDay').onclick=()=>{
 };
 // Escucha cambios en campos normales y también en controles dinámicos de los registros.
 document.addEventListener('input',scheduleAutosave);
-document.addEventListener('change',scheduleAutosave);
-window.addEventListener('pagehide',()=>{clearTimeout(autosaveTimer);persistRecord(false)});
+// Guardado al cerrar desactivado temporalmente por seguridad.
 
 function renderHistory(){let a=all(),keys=Object.keys(a).sort().reverse();$('history').innerHTML=keys.length?keys.map(k=>`<div class="dayitem"><div><strong>${k}</strong><div class="hint">${(a[k].entries||[]).length} registros por hora · ${(a[k].vitals||[]).length} mediciones</div></div><div class="inline"><button class="btn secondary" onclick="loadDay('${k}')">Abrir</button><button class="btn danger" onclick="deleteDay('${k}')">Borrar</button></div></div>`).join(''):'<p class="hint">Todavía no hay días guardados.</p>'}
-window.loadDay=k=>{activeDate=k;clearForm(all()[k]);document.querySelector('[data-tab="dia"]').click();window.scrollTo(0,0);setSaveStatus('Registro recuperado · '+k)};
+window.loadDay=k=>{clearTimeout(autosaveTimer);activeDate=k;clearForm(all()[k]);$('date').value=k;document.querySelector('[data-tab="dia"]').click();window.scrollTo(0,0);setSaveStatus('Registro recuperado · '+k)};
 window.deleteDay=k=>{if(confirm('¿Borrar el registro del '+k+'?')){let a=all();delete a[k];localStorage.setItem('myriRecords',JSON.stringify(a));renderHistory()}};
 $('exportJson').onclick=()=>download('registro_myri_respaldo.json',JSON.stringify(all(),null,2),'application/json');
 function download(name,data,type){let blob=new Blob([data],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
@@ -830,7 +846,6 @@ $('refreshWeek')?.addEventListener('click',renderEvolution);
 $('weeklyPdf')?.addEventListener('click',printWeekly);
 
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab));if(b.dataset.tab==='historial')renderHistory();if(b.dataset.tab==='evolucion'){if($('weekEnd')&&!$('weekEnd').value)$('weekEnd').value=today();renderEvolution()}});
-clearForm();
 // Recupera automáticamente el registro de hoy si ya existe en este navegador.
 activeDate=today();
 $('date').value=activeDate;
