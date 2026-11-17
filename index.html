@@ -242,8 +242,12 @@ small,.hint{color:var(--muted);font-size:12px}
   <input id="myriPassword" type="password" autocomplete="current-password" placeholder="Tu contraseña" style="display:block;width:100%;padding:12px;margin:6px 0 14px;border:1px solid #dce6e4;border-radius:8px;">
   <button id="myriLoginBtn" type="button">Iniciar sesión</button>
   <button id="myriLogoutBtn" type="button">Cerrar sesión</button>
-  <button id="myriDownloadBtn" type="button">Actualizar desde mi nube</button>
-<button id="myriUploadBtn" type="button">Subir mis respaldos locales</button>
+  <div class="btnrow noprint" style="margin-top:12px">
+<button class="btn secondary" id="myriMasterBtn" type="button">1. Establecer Mac como copia principal</button>
+<button class="btn secondary" id="myriJoinBtn" type="button">2. Conectar Samsung a la nube</button>
+<button class="btn secondary" id="myriSyncNowBtn" type="button">Sincronizar ahora</button>
+</div>
+<p class="hint">Primero activa la Mac con el respaldo completo. Después conecta el Samsung. Ante diferencias simultáneas, Myri conserva ambas versiones y avisa antes de reemplazar nada.</p>
   <p id="myriAuthStatus" role="status">Sin conexión a la nube.</p>
 </div>
 <script>
@@ -278,82 +282,155 @@ async function myriLogout(){
 
 $('myriLoginBtn').addEventListener('click',myriLogin);
 $('myriLogoutBtn').addEventListener('click',myriLogout);
-$('myriUploadBtn').addEventListener('click',myriUpload);
-$('myriDownloadBtn').addEventListener('click',myriDownload);
-async function myriUpload(){
-  const {data:{user},error:authError}=await supabaseClient.auth.getUser();
-
-  if(authError || !user){
-    $('myriAuthStatus').textContent='Primero inicia sesión.';
-    return;
-  }
-
-  const records=all();
-  const dates=Object.keys(records);
-
-  if(!dates.length){
-    $('myriAuthStatus').textContent='No hay registros locales para subir.';
-    return;
-  }
-
-  const rows=dates.map(date=>({
-    user_id:user.id,
-    record_date:date,
-    data:records[date],
-    updated_at:new Date().toISOString()
-  }));
-
-  const {error}=await supabaseClient
-    .from('myri_records')
-    .upsert(rows,{onConflict:'user_id,record_date'});
-
-  $('myriAuthStatus').textContent=error
-    ? 'Error al subir: '+error.message
-    : 'Respaldo subido correctamente: '+rows.length+' registros.';
+// Sincronización protegida: se activa de manera explícita en cada dispositivo.
+const SYNC_BASE_KEY='myriSyncBaselineV1';
+const SYNC_ON_KEY='myriSyncEnabledV1';
+const SYNC_BACKUP_KEY='myriSyncSafetyCopiesV1';
+let myriSyncBusy=false;
+let myriSyncTimer=null;
+const myriSyncEnabled=()=>localStorage.getItem(SYNC_ON_KEY)==='yes';
+const myriHash=v=>JSON.stringify(v??null);
+function myriBaseline(){try{return JSON.parse(localStorage.getItem(SYNC_BASE_KEY)||'{}')}catch{return {}}}
+function myriStatus(message){$('myriAuthStatus').textContent=message;}
+function myriKeepSafetyCopy(label){
+  const raw=localStorage.getItem('myriRecords')||'{}';
+  try{
+    const copies=JSON.parse(localStorage.getItem(SYNC_BACKUP_KEY)||'[]');
+    copies.push({label,date:new Date().toISOString(),records:JSON.parse(raw)});
+    localStorage.setItem(SYNC_BACKUP_KEY,JSON.stringify(copies.slice(-3)));
+  }catch(e){/* El archivo JSON descargado sigue siendo el respaldo principal. */}
+  download('myri_respaldo_antes_de_sincronizar_'+new Date().toISOString().slice(0,10)+'.json',raw,'application/json');
 }
-async function myriDownload(){
-  const {data:{user},error:authError}=await supabaseClient.auth.getUser();
-
-  if(authError || !user){
-    $('myriAuthStatus').textContent='Primero inicia sesión.';
-    return;
-  }
-
-  const {data,error}=await supabaseClient
-    .from('myri_records')
-    .select('record_date,data')
-    .eq('user_id',user.id);
-
-  if(error){
-    $('myriAuthStatus').textContent='Error al descargar: '+error.message;
-    return;
-  }
-
-  const local=all();
-let imported=0;
-let alreadySaved=0;
-
-data.forEach(row=>{
-  if(!local[row.record_date]){
-    local[row.record_date]=row.data;
-    imported++;
-  }else{
-    alreadySaved++;
-  }
+async function myriCloudUser(){
+  const {data,error}=await supabaseClient.auth.getUser();
+  if(error||!data?.user){myriStatus('Primero inicia sesión en Mi cuenta Myri.');return null}
+  return data.user;
+}
+async function myriCloudRows(user){
+  const {data,error}=await supabaseClient.from('myri_records')
+    .select('record_date,data,updated_at').eq('user_id',user.id);
+  if(error)throw error;
+  return data||[];
+}
+async function myriMakeMaster(){
+  if(myriSyncBusy)return;
+  const user=await myriCloudUser();if(!user)return;
+  if(!confirm('SOLO EN LA MAC con los registros completos. Esta acción reemplazará las versiones de la nube con las de esta Mac. ¿Confirmas que estás en la Mac y que descargaste tu respaldo JSON?'))return;
+  clearTimeout(autosaveTimer);
+  persistRecord(false);
+  myriKeepSafetyCopy('Mac antes de publicar copia principal');
+  myriSyncBusy=true;
+  try{
+    const records=all(),dates=Object.keys(records);
+    if(!dates.length)throw Error('No hay registros locales para publicar.');
+    const rows=dates.map(date=>({user_id:user.id,record_date:date,data:records[date],updated_at:new Date().toISOString()}));
+    const {data,error}=await supabaseClient.from('myri_records')
+      .upsert(rows,{onConflict:'user_id,record_date'}).select('record_date,data,updated_at');
+    if(error)throw error;
+    const baseline={};
+    (data||[]).forEach(r=>baseline[r.record_date]={hash:myriHash(r.data),updated_at:r.updated_at});
+    localStorage.setItem(SYNC_BASE_KEY,JSON.stringify(baseline));
+    localStorage.setItem(SYNC_ON_KEY,'yes');
+    myriStatus('Mac configurada como copia principal. '+dates.length+' días publicados. Sincronización automática activada.');
+  }catch(e){myriStatus('No se activó la sincronización: '+e.message)}
+  finally{myriSyncBusy=false}
+}
+async function myriJoinCloud(){
+  if(myriSyncBusy)return;
+  const user=await myriCloudUser();if(!user)return;
+  myriSyncBusy=true;
+  try{
+    const rows=await myriCloudRows(user);
+    if(!rows.length)throw Error('La nube aún no tiene registros. Primero configura la Mac.');
+    const local=all();
+    const different=rows.filter(r=>local[r.record_date]&&myriHash(local[r.record_date])!==myriHash(r.data));
+    const newOnly=Object.keys(local).filter(k=>!rows.some(r=>r.record_date===k));
+    myriKeepSafetyCopy('Samsung antes de conectar');
+    const message='Se descargó un respaldo JSON de seguridad de este dispositivo. La nube contiene '+rows.length+' días. '+different.length+' fechas tienen datos distintos. '+newOnly.length+' fechas solo existen aquí y se conservarán. ¿Quieres usar la versión de la Mac para las fechas coincidentes?';
+    if(!confirm(message)){myriStatus('Conexión cancelada. Conservamos los registros locales y el respaldo.');return}
+    const merged={...local};
+    rows.forEach(r=>{merged[r.record_date]=r.data});
+    localStorage.setItem('myriRecords',JSON.stringify(merged));
+    const baseline={};
+    rows.forEach(r=>baseline[r.record_date]={hash:myriHash(r.data),updated_at:r.updated_at});
+    localStorage.setItem(SYNC_BASE_KEY,JSON.stringify(baseline));
+    localStorage.setItem(SYNC_ON_KEY,'yes');
+    if(merged[activeDate])clearForm(merged[activeDate]);
+    renderHistory();renderEvolution();
+    myriStatus('Dispositivo conectado. '+rows.length+' días recuperados. Sincronización automática activada.');
+  }catch(e){myriStatus('No se pudo conectar: '+e.message)}
+  finally{myriSyncBusy=false}
+}
+async function myriSync(){
+  if(myriSyncBusy||!myriSyncEnabled()||!navigator.onLine)return;
+  const user=await myriCloudUser();if(!user)return;
+  myriSyncBusy=true;
+  try{
+    if(autosaveTimer){clearTimeout(autosaveTimer);autosaveTimer=null;persistRecord(false)}
+    const rows=await myriCloudRows(user);
+    const remote=Object.fromEntries(rows.map(r=>[r.record_date,r]));
+    const baseline=myriBaseline();
+    const local=all();
+    const conflicts=[];
+    let pulled=0,pushed=0;
+    const dates=new Set([...Object.keys(local),...Object.keys(remote)]);
+    for(const date of dates){
+      const r=remote[date],l=local[date],base=baseline[date];
+      const lh=l===undefined?null:myriHash(l);
+      const rh=r===undefined?null:myriHash(r.data);
+      const bh=base?.hash??null;
+      // No reemplazar la fecha visible mientras la persona escribe.
+      const editing=date===activeDate&&document.activeElement?.matches('input,textarea,select');
+      if(lh===rh){if(r)baseline[date]={hash:rh,updated_at:r.updated_at};continue}
+      if(lh===bh && rh!==bh){
+        if(editing)continue;
+        if(r){local[date]=r.data;baseline[date]={hash:rh,updated_at:r.updated_at};pulled++}
+        else conflicts.push(date);
+        continue;
+      }
+      if(rh===bh && lh!==bh && l!==undefined){
+        let result;
+        if(r){
+          result=await supabaseClient.from('myri_records').update({data:l,updated_at:new Date().toISOString()})
+            .eq('user_id',user.id).eq('record_date',date).eq('updated_at',r.updated_at)
+            .select('record_date,data,updated_at');
+        }else{
+          result=await supabaseClient.from('myri_records')
+            .upsert({user_id:user.id,record_date:date,data:l,updated_at:new Date().toISOString()},
+              {onConflict:'user_id,record_date',ignoreDuplicates:true})
+            .select('record_date,data,updated_at');
+        }
+        if(result.error)throw result.error;
+        if(result.data?.length){const updated=result.data[0];baseline[date]={hash:myriHash(updated.data),updated_at:updated.updated_at};pushed++}
+        else conflicts.push(date);
+        continue;
+      }
+      conflicts.push(date);
+    }
+    if(pulled){
+      localStorage.setItem('myriRecords',JSON.stringify(local));
+      if(local[activeDate]&&!document.activeElement?.matches('input,textarea,select'))clearForm(local[activeDate]);
+      renderHistory();renderEvolution();
+    }
+    localStorage.setItem(SYNC_BASE_KEY,JSON.stringify(baseline));
+    if(conflicts.length){
+      myriStatus('Atención: versiones diferentes en '+conflicts.join(', ')+'. No se sobrescribió ninguna. Conserva tus respaldos y revisa antes de continuar.');
+    }else if(pulled||pushed){
+      myriStatus('Sincronizado: '+pushed+' días enviados y '+pulled+' recibidos.');
+    }else myriStatus('Sincronización automática activa · sin cambios pendientes.');
+  }catch(e){myriStatus('Sincronización pendiente: '+e.message+' · Los datos locales siguen guardados.')}
+  finally{myriSyncBusy=false}
+}
+function myriSyncSoon(){if(myriSyncEnabled())setTimeout(()=>myriSync(),500)}
+$('myriMasterBtn').addEventListener('click',myriMakeMaster);
+$('myriJoinBtn').addEventListener('click',myriJoinCloud);
+$('myriSyncNowBtn').addEventListener('click',myriSync);
+window.addEventListener('online',myriSyncSoon);
+window.addEventListener('focus',myriSyncSoon);
+myriSyncTimer=setInterval(()=>{if(document.visibilityState==='visible')myriSync()},15000);
+supabaseClient.auth.onAuthStateChange((event,session)=>{
+  if(event==='SIGNED_IN'&&myriSyncEnabled())myriSyncSoon();
 });
-
-localStorage.setItem('myriRecords',JSON.stringify(local));
-
-  $('myriAuthStatus').textContent=
-    'Actualización completada: '+imported+' registros nuevos. '+alreadySaved+' ya existían y se conservaron.';
-
-  if(activeDate && local[activeDate]){
-    clearForm(local[activeDate]);
-  }
-
-  renderHistory();
-  if(document.querySelector('[data-tab="evolucion"]')?.classList.contains('active'))renderEvolution();
-}
 const fields=['date','daynote','fluidTotal','nightSymptoms','bed','sleep','wake','nap','naptime','eventTime','trigger','intensity','physical','helped','eventNotes'];
 let specials=[],exercises=[];
 let entries=[],vitals=[],medications=[],moods=[{when:'Mañana',time:'',sad:0,anxiety:0},{when:'Noche',time:'',sad:0,anxiety:0}];
@@ -761,6 +838,7 @@ const savedToday=all()[activeDate];
 if(savedToday)clearForm(savedToday); else clearForm({date:activeDate});
 renderHistory();
 setSaveStatus(savedToday?'Registro de hoy recuperado · autoguardado activado':'Día de hoy listo · autoguardado activado · solo en este dispositivo');
+if(myriSyncEnabled())myriSyncSoon();
 </script>
 <script>if('serviceWorker' in navigator && location.protocol.startsWith('http')){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}</script>
 
