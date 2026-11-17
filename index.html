@@ -491,18 +491,16 @@ function napHours(d){
  if(hours||minutes){const total=(hours?Number(hours[1])*60:0)+(minutes?Number(minutes[1]):0);return total>0&&total<=720?total/60:null;}
  return null;
 }
+function nightHours(d){
+ if(!d?.sleep||!d?.wake)return null;
+ const [sh,sm]=d.sleep.split(':').map(Number),[wh,wm]=d.wake.split(':').map(Number);
+ if(![sh,sm,wh,wm].every(Number.isFinite)||sh>23||wh>23||sm>59||wm>59)return null;
+ let mins=(wh*60+wm)-(sh*60+sm);
+ if(mins<=0)mins+=1440;
+ return mins/60;
+}
 function sleepHours(d){
- if(!d)return null;
- let night=null;
- if(d.sleep&&d.wake){
-  const [sh,sm]=d.sleep.split(':').map(Number),[wh,wm]=d.wake.split(':').map(Number);
-  if([sh,sm,wh,wm].every(Number.isFinite)){
-   let mins=(wh*60+wm)-(sh*60+sm);
-   if(mins<=0)mins+=1440;
-   night=mins/60;
-  }
- }
- const nap=napHours(d);
+ const night=nightHours(d),nap=napHours(d);
  return night===null&&nap===null?null:(night||0)+(nap||0);
 }
 function shortDay(k){const d=new Date(k+'T12:00:00');return d.toLocaleDateString('es-MX',{weekday:'short'}).replace('.','')}
@@ -520,8 +518,17 @@ function lineChart(days){
  return vals.some(v=>v.sad!==null||v.anx!==null)?svg+`<div class="legend"><span><i style="background:#4c7d89"></i>Tristeza</span><span><i style="background:#b47b65"></i>Ansiedad</span></div>`:'<p class="hint">Sin puntuaciones de ánimo registradas esta semana.</p>';
 }
 function sleepBars(days){
- const rows=days.map(d=>{const h=sleepHours(d.data);return `<div style="display:grid;grid-template-columns:48px 1fr 48px;gap:8px;align-items:center;margin:10px 0"><span class="hint">${escSvg(shortDay(d.date))}</span><div class="progress"><span style="width:${h===null?0:Math.min(100,h/12*100)}%"></span></div><strong style="font-size:12px;text-align:right">${h===null?'—':fmt(h)+' h'}</strong></div>`}).join('');
- return days.some(d=>sleepHours(d.data)!==null)?rows:'<p class="hint">Sin datos suficientes de sueño esta semana.</p>';
+ const rows=days.map(({date,data})=>{
+  const night=nightHours(data),nap=napHours(data),total=sleepHours(data);
+  const nightWidth=total===null?0:Math.min(100,(night||0)/24*100);
+  const napWidth=total===null?0:Math.min(100,(nap||0)/24*100);
+  const detail=total===null?'Sin registro de sueño':[
+   'Noche: '+(night===null?'sin dato':fmt(night)+' h'),
+   'Siesta: '+(nap===null?'sin dato':fmt(nap)+' h')
+  ].join(' · ');
+  return `<div style="margin:12px 0;break-inside:avoid"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><strong style="font-size:13px">${escSvg(shortDay(date))} · ${escSvg(date)}</strong><strong style="font-size:13px">${total===null?'—':fmt(total)+' h totales'}</strong></div><div style="height:10px;background:#e8efed;border-radius:9px;overflow:hidden;display:flex;margin:6px 0"><span style="background:#4c7d89;width:${nightWidth}%"></span><span style="background:#d5a16e;width:${napWidth}%"></span></div><div class="hint">${detail}</div></div>`;
+ }).join('');
+ return days.some(d=>sleepHours(d.data)!==null)?`<div class="legend"><span><i style="background:#4c7d89"></i>Sueño nocturno</span><span><i style="background:#d5a16e"></i>Siesta</span></div>${rows}`:'<p class="hint">Sin datos suficientes de sueño esta semana.</p>';
 }
 function simpleVitalPlot(rows,key,label,unit,color){
  const vals=rows.map((v,i)=>({v:Number(v[key]),i,date:v.date,time:v.time})).filter(x=>Number.isFinite(x.v)&&x.v>0);
