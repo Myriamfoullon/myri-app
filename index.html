@@ -672,15 +672,15 @@ function buildWeeklyReport(days,stats){
  </div>
 
 <div class="report-section">
-  <h2>Medicamentos · Detalle por día</h2>
-  <p>${stats.meds.length?`${stats.taken} de ${stats.meds.length} dosis marcadas como tomadas en el periodo.`:'No hay datos de medicamentos.'}</p>
-  ${days.map(x=>{
-    const meds=x.data?.medications||[];
+  <h2>Medicamentos</h2>
+  <p>${stats.meds.length?`<b>${stats.taken} de ${stats.meds.length}</b> dosis marcadas como tomadas en el periodo.`:'No hay datos de medicamentos.'}</p>
+  ${days.filter(x=>x.data).map(x=>{
+    const ms=x.data.medications||[];
     return `<div class="dayitem">
-      <strong>${esc(x.date)}</strong>
-      ${meds.length
-        ? `<ul>${meds.map(m=>`<li><strong>${esc(m.name)}</strong> · ${esc(m.dose)} · ${esc(m.when||'Horario no especificado')}${m.time?' · '+esc(m.time):''} · ${m.taken?'Tomado':'Sin marcar'}</li>`).join('')}</ul>`
-        : '<p class="hint">Sin medicamentos registrados</p>'
+      <b>${escSvg(x.date)}</b>
+      ${ms.length
+        ? `<ul class="report-list">${ms.map(m=>`<li><b>${escSvg(m.name||'Medicamento')}</b> (${escSvg(m.dose||'Dosis no indicada')}) · ${m.taken?'Tomado':'Sin marcar'}${m.time?' · '+escSvg(m.time):''}</li>`).join('')}</ul>`
+        : '<p class="report-note">Sin lista de medicamentos.</p>'
       }
     </div>`;
   }).join('')}
