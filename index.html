@@ -536,23 +536,154 @@ function renderEvolution(){
 }
 function buildWeeklyReport(days,stats){
  const period=`${days[0].date} a ${days[6].date}`;
- const dayRows=days.map(x=>{const d=x.data;if(!d)return `<tr><td>${x.date}</td><td colspan="8">Sin registro</td></tr>`;
- const m=d.moods||[],s=avg(m.map(z=>z.sad)),a=avg(m.map(z=>z.anxiety)),h=sleepHours(d);
- const med=d.medications||[],tm=med.filter(z=>z.taken).length;
- const meal=(d.entries||[]).filter(z=>z.kind==='Alimento').length,liq=(d.entries||[]).filter(z=>z.kind==='Líquido').length;
- const v=(d.vitals||[]).map(z=>`${z.time||''} PA ${z.bp||'—'} / FC ${z.hr||'—'}`).join('<br>')||'—';
- const note=[d.daynote,d.fluidTotal?`Líquidos: ${d.fluidTotal}`:'',d.nightSymptoms?`Síntomas: ${d.nightSymptoms}`:''].filter(Boolean).map(escSvg).join('<br>')||'—';
- return `<tr><td>${x.date}</td><td>${h===null?'—':fmt(h)+' h'}</td><td>${s===null?'—':fmt(s)}</td><td>${a===null?'—':fmt(a)}</td><td>${meal}</td><td>${liq}</td><td>${med.length?tm+'/'+med.length:'—'}</td><td>${v}</td><td>${note}</td></tr>`;
+
+ const safe=(v)=>esc(v??'—');
+ const showTime=(v)=>v?` · ${safe(v)}`:'';
+
+ const dayRows=days.map(x=>{
+  const d=x.data;
+  if(!d)return `<tr><td>${safe(x.date)}</td><td colspan="8">Sin registro</td></tr>`;
+
+  const m=d.moods||[];
+  const s=avg(m.map(z=>z.sad));
+  const a=avg(m.map(z=>z.anxiety));
+  const h=sleepHours(d);
+  const med=d.medications||[];
+  const tm=med.filter(z=>z.taken).length;
+  const meal=(d.entries||[]).filter(z=>z.kind==='Alimento').length;
+  const liq=(d.entries||[]).filter(z=>z.kind==='Líquido').length;
+  const v=(d.vitals||[]).map(z=>`${safe(z.time||z.when)} PA ${safe(z.bp)} / FC ${safe(z.hr)}`).join('<br>')||'—';
+  const note=[d.daynote,d.fluidTotal?`Líquidos: ${d.fluidTotal}`:'',d.nightSymptoms?`Síntomas: ${d.nightSymptoms}`:''].filter(Boolean).map(safe).join('<br>')||'—';
+
+  return `<tr>
+   <td>${safe(x.date)}</td>
+   <td>${h===null?'—':fmt(h)+' h'}</td>
+   <td>${s===null?'—':fmt(s)}</td>
+   <td>${a===null?'—':fmt(a)}</td>
+   <td>${meal}</td>
+   <td>${liq}</td>
+   <td>${med.length?tm+'/'+med.length:'—'}</td>
+   <td>${v}</td>
+   <td>${note}</td>
+  </tr>`;
  }).join('');
- const eventBlocks=days.filter(x=>x.data&&(x.data.trigger||x.data.physical||x.data.helped||x.data.eventNotes)).map(x=>`<p><b>${x.date}:</b> ${[x.data.eventTime,x.data.trigger,x.data.physical,x.data.helped,x.data.eventNotes].filter(Boolean).map(escSvg).join(' · ')}</p>`).join('')||'<p>No se registraron eventos especiales en el periodo.</p>';
- $('weeklyReport').innerHTML=`<div class="report-head"><h1>Registro Myri · Informe semanal</h1><p>Periodo: ${period} · Generado: ${new Date().toLocaleDateString('es-MX')}</p><p>Resumen descriptivo para revisión clínica. No constituye interpretación ni diagnóstico.</p></div>
- <div class="report-section"><h2>Indicadores de la semana</h2><div class="report-grid">${metric('Días registrados',`${stats.saved.length}/7`,'')}${metric('Tristeza promedio',stats.sad===null?'—':fmt(stats.sad)+'/10','')}${metric('Ansiedad promedio',stats.anx===null?'—':fmt(stats.anx)+'/10','')}${metric('Sueño promedio',stats.sleepAvg===null?'—':fmt(stats.sleepAvg)+' h','')}</div></div>
- <div class="report-section"><h2>Evolución emocional</h2>${lineChart(days)}</div>
- <div class="report-section"><h2>Sueño</h2>${sleepBars(days)}</div>
- <div class="report-section"><h2>Detalle diario</h2><table class="report-table"><thead><tr><th>Fecha</th><th>Sueño</th><th>Tristeza</th><th>Ansiedad</th><th>Alimentos</th><th>Líquidos</th><th>Medicamentos*</th><th>Signos vitales</th><th>Notas</th></tr></thead><tbody>${dayRows}</tbody></table><p class="report-note">* Medicamentos: dosis marcadas como tomadas / dosis listadas. Una casilla sin marcar no confirma una omisión. Los campos vacíos se muestran como “—”.</p></div>
- <div class="report-section"><h2>Medicamentos</h2><p>${stats.meds.length?`${stats.taken} de ${stats.meds.length} dosis marcadas como tomadas en el periodo.`:'No hay datos de medicamentos.'}</p>${days.filter(x=>x.data).map(x=>`<p><b>${x.date}:</b> ${(x.data.medications||[]).map(m=>`${escSvg(m.name)} (${escSvg(m.dose)}) · ${m.taken?'Tomado':'Sin marcar'}${m.time?' · '+escSvg(m.time):''}`).join('; ')||'Sin lista de medicamentos'}</p>`).join('')}</div>
- <div class="report-section"><h2>Eventos y observaciones</h2>${eventBlocks}</div>
- <p class="report-note">Documento generado a partir de los datos introducidos en Registro Myri. Verificar la información con la persona que la registró.</p>`;
+
+ const foodBlocks=days.map(x=>{
+  const d=x.data;
+  const entries=(d?.entries||[]).filter(e=>e.kind==='Alimento');
+  return `<div class="dayitem"><strong>${safe(x.date)}</strong>${
+   entries.length
+   ?entries.map(e=>`<p>${safe(e.time||'Hora no registrada')} · ${safe(e.detail||'Sin descripción')}</p>`).join('')
+   :' <p class="hint">Sin registros de alimentos</p>'
+  }</div>`;
+ }).join('');
+
+ const fluidBlocks=days.map(x=>{
+  const d=x.data;
+  const entries=(d?.entries||[]).filter(e=>e.kind==='Líquido');
+  return `<div class="dayitem"><strong>${safe(x.date)}</strong>${
+   entries.length
+   ?entries.map(e=>`<p>${safe(e.time||'Hora no registrada')} · ${safe(e.detail||'Sin descripción')}</p>`).join('')
+   :' <p class="hint">Sin registros de líquidos</p>'
+  }</div>`;
+ }).join('');
+
+ const medBlocks=days.map(x=>{
+  const d=x.data;
+  const meds=d?.medications||[];
+  return `<div class="dayitem"><strong>${safe(x.date)}</strong>${
+   meds.length
+   ?meds.map(m=>`<p>${safe(m.name)} · ${safe(m.dose)} · ${safe(m.when||'Horario no especificado')}${showTime(m.time)} · ${m.taken?'Tomado':'Sin marcar'}</p>`).join('')
+   :' <p class="hint">Sin lista de medicamentos</p>'
+  }</div>`;
+ }).join('');
+
+ const eventBlocks=days.map(x=>{
+  const d=x.data;
+  if(!d)return `<p><b>${safe(x.date)}:</b> Sin registro</p>`;
+  const notes=[d.eventTime,d.trigger,d.physical,d.helped,d.eventNotes,d.nightSymptoms].filter(Boolean);
+  return `<p><b>${safe(x.date)}:</b> ${notes.length?notes.map(safe).join(' · '):'Sin eventos u observaciones registrados'}</p>`;
+ }).join('');
+
+ const vitalData=stats.vitals||[];
+ const vitalDetails=days.map(x=>{
+  const vs=x.data?.vitals||[];
+  return `<div class="dayitem"><strong>${safe(x.date)}</strong>${
+   vs.length
+   ?vs.map(v=>`<p>${safe(v.when||'Momento no especificado')}${showTime(v.time)} · PA ${safe(v.bp)} · FC ${safe(v.hr)} lpm${v.note?` · ${safe(v.note)}`:''}</p>`).join('')
+   :' <p class="hint">Sin mediciones registradas</p>'
+  }</div>`;
+ }).join('');
+
+ $('weeklyReport').innerHTML=`
+ <div class="report-head">
+  <h1>Registro Myri · Informe semanal</h1>
+  <p>Periodo: ${period} · Generado: ${new Date().toLocaleDateString('es-MX')}</p>
+  <p>Resumen descriptivo para revisión clínica. No constituye interpretación ni diagnóstico.</p>
+ </div>
+
+ <div class="report-section">
+  <h2>Indicadores de la semana</h2>
+  <div class="report-grid">
+   ${metric('Días registrados',`${stats.saved.length}/7`,'')}
+   ${metric('Tristeza promedio',stats.sad===null?'—':fmt(stats.sad)+'/10','')}
+   ${metric('Ansiedad promedio',stats.anx===null?'—':fmt(stats.anx)+'/10','')}
+   ${metric('Sueño promedio',stats.sleepAvg===null?'—':fmt(stats.sleepAvg)+' h','')}
+  </div>
+ </div>
+
+ <div class="report-section">
+  <h2>Evolución emocional</h2>
+  ${lineChart(days)}
+ </div>
+
+ <div class="report-section">
+  <h2>Sueño</h2>
+  ${sleepBars(days)}
+ </div>
+
+ <div class="report-section">
+  <h2>Presión arterial y frecuencia cardiaca</h2>
+  ${vitalData.length?vitalPlots(vitalData):'<p class="hint">No hay mediciones de signos vitales en este periodo.</p>'}
+  ${vitalDetails}
+ </div>
+
+ <div class="report-section">
+  <h2>Detalle diario</h2>
+  <table class="report-table">
+   <thead><tr>
+    <th>Fecha</th><th>Sueño</th><th>Tristeza</th><th>Ansiedad</th>
+    <th>Alimentos</th><th>Líquidos</th><th>Medicamentos*</th>
+    <th>Signos vitales</th><th>Notas</th>
+   </tr></thead>
+   <tbody>${dayRows}</tbody>
+  </table>
+  <p class="report-note">* Medicamentos: dosis marcadas como tomadas / dosis listadas. Una casilla sin marcar no confirma una omisión. Los campos vacíos se muestran como “—”.</p>
+ </div>
+
+ <div class="report-section">
+  <h2>Alimentación · Detalle por día y horario</h2>
+  ${foodBlocks}
+ </div>
+
+ <div class="report-section">
+  <h2>Líquidos · Detalle por día y horario</h2>
+  ${fluidBlocks}
+ </div>
+
+ <div class="report-section">
+  <h2>Medicamentos · Detalle por día</h2>
+  <p>${stats.meds.length?`${stats.taken} de ${stats.meds.length} dosis marcadas como tomadas en el periodo.`:'No hay datos de medicamentos.'}</p>
+  ${medBlocks}
+ </div>
+
+ <div class="report-section">
+  <h2>Eventos y observaciones</h2>
+  ${eventBlocks}
+ </div>
+
+ <p class="report-note">Documento generado a partir de los datos introducidos en Registro Myri. Verificar la información con la persona que la registró.</p>
+ `;
 }
 function printWeekly(){
  clearTimeout(autosaveTimer);persistRecord(false);renderEvolution();
