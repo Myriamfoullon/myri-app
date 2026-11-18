@@ -724,16 +724,6 @@ function buildWeeklyReport(days,stats){
   </div>`;
  }).join('');
 
- const fluidBlocks=days.map(x=>{
-  const d=x.data;
-  const entries=(d?.entries||[]).filter(e=>e.kind==='Líquido');
-  return `<div class="dayitem"><strong>${safe(x.date)}</strong>${
-   entries.length
-   ?entries.map(e=>`<p>${safe(e.time||'Hora no registrada')} · ${safe(e.detail||'Sin descripción')}</p>`).join('')
-   :' <p class="hint">Sin registros de líquidos</p>'
-  }</div>`;
- }).join('');
-
  const medBlocks=days.map(x=>{
   const d=x.data;
   const meds=d?.medications||[];
@@ -812,10 +802,6 @@ function buildWeeklyReport(days,stats){
   ${foodBlocks}
  </div>
 
- <div class="report-section">
-  <h2>Líquidos · Detalle por día y horario</h2>
-  ${fluidBlocks}
- </div>
 
 <div class="report-section">
   <h2>Medicamentos</h2>
